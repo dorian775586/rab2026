@@ -66,6 +66,7 @@ interface LeaderboardUser {
 type Tab = 'profile' | 'slaves' | 'market' | 'games' | 'shop' | 'leaderboard';
 
 export default function App() {
+  const API_URL = 'https://rab2026.onrender.com';
   const [activeTab, setActiveTab] = useState<Tab>('profile');
   const [user, setUser] = useState<UserData | null>(null);
   const [slaves, setSlaves] = useState<MarketUser[]>([]);
@@ -125,7 +126,7 @@ export default function App() {
 
   const fetchUser = useCallback(async () => {
     try {
-      const response = await fetch('/api/sync', {
+      const response = await fetch(API_URL + '/api/sync', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -145,7 +146,7 @@ export default function App() {
 
   const fetchSlaves = useCallback(async () => {
     try {
-      const response = await fetch('/api/slaves', {
+      const response = await fetch(API_URL + '/api/slaves', {
         headers: { 'x-telegram-init-data': WebApp.initData },
       });
       const data = await response.json();
@@ -164,7 +165,7 @@ export default function App() {
 
   const fetchMarket = useCallback(async () => {
     try {
-      const response = await fetch(`/api/market?sort=${marketSort}`, {
+      const response = await fetch(`${API_URL}/api/market?sort=${marketSort}`, {
         headers: { 'x-telegram-init-data': WebApp.initData },
       });
       const data = await response.json();
@@ -176,7 +177,7 @@ export default function App() {
 
   const fetchProfile = async (id: number) => {
     try {
-      const response = await fetch(`/api/profile/${id}`, {
+      const response = await fetch(`${API_URL}/api/profile/${id}`, {
         headers: { 'x-telegram-init-data': WebApp.initData },
       });
       const data = await response.json();
@@ -188,7 +189,7 @@ export default function App() {
 
   const fetchMyListings = useCallback(async () => {
     try {
-      const response = await fetch('/api/market/my-listings', {
+      const response = await fetch(API_URL + '/api/market/my-listings', {
         headers: { 'x-telegram-init-data': WebApp.initData },
       });
       const data = await response.json();
@@ -200,7 +201,7 @@ export default function App() {
 
   const fetchGlobals = useCallback(async () => {
     try {
-      const response = await fetch('/api/globals');
+      const response = await fetch(API_URL + '/api/globals');
       const data = await response.json();
       if (response.ok) setGlobals(data);
     } catch (err) {
@@ -210,7 +211,7 @@ export default function App() {
 
   const fetchLeaderboard = useCallback(async () => {
     try {
-      const response = await fetch('/api/leaderboard', {
+      const response = await fetch(API_URL + '/api/leaderboard', {
         headers: { 'x-telegram-init-data': WebApp.initData },
       });
       const data = await response.json();
@@ -241,7 +242,7 @@ export default function App() {
   const handleBuy = async (targetId: number) => {
     setActionLoading(targetId);
     try {
-      const response = await fetch('/api/buy', {
+      const response = await fetch(API_URL + '/api/buy', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -266,7 +267,7 @@ export default function App() {
   const handleUpgrade = async (targetId: number) => {
     setActionLoading(`upgrade-${targetId}`);
     try {
-      const response = await fetch('/api/upgrade', {
+      const response = await fetch(API_URL + '/api/upgrade', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -292,7 +293,7 @@ export default function App() {
   const handleSellSlave = async (slaveId: number) => {
     setActionLoading(`sell-${slaveId}`);
     try {
-      const response = await fetch('/api/sell', {
+      const response = await fetch(API_URL + '/api/sell', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -320,7 +321,7 @@ export default function App() {
     setIsSpinning(true);
     setSpinResult(null);
     try {
-      const response = await fetch('/api/spin', {
+      const response = await fetch(API_URL + '/api/spin', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -354,7 +355,7 @@ export default function App() {
     // For demo, we simulate success
     setActionLoading(`buy-${amount}`);
     try {
-      const response = await fetch('/api/buy-coins', {
+      const response = await fetch(API_URL + '/api/buy-coins', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -376,7 +377,7 @@ export default function App() {
   const handleBuyGhost = async () => {
     setActionLoading('ghost');
     try {
-      const response = await fetch('/api/buy-ghost', {
+      const response = await fetch(API_URL + '/api/buy-ghost', {
         method: 'POST',
         headers: { 'x-telegram-init-data': WebApp.initData },
       });
@@ -395,7 +396,7 @@ export default function App() {
   const handleBuyPremium = async () => {
     setActionLoading('premium');
     try {
-      const response = await fetch('/api/buy-premium', {
+      const response = await fetch(API_URL + '/api/buy-premium', {
         method: 'POST',
         headers: { 'x-telegram-init-data': WebApp.initData },
       });
@@ -414,7 +415,7 @@ export default function App() {
   const handleBuyGhostShort = async () => {
     setActionLoading('ghost-short');
     try {
-      const response = await fetch('/api/buy-ghost-short', {
+      const response = await fetch(API_URL + '/api/buy-ghost-short', {
         method: 'POST',
         headers: { 'x-telegram-init-data': WebApp.initData },
       });
@@ -437,7 +438,7 @@ export default function App() {
     if (!listingSlaveId || !listingPrice) return;
     setActionLoading('listing');
     try {
-      const response = await fetch('/api/market/list', {
+      const response = await fetch(API_URL + '/api/market/list', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -463,7 +464,7 @@ export default function App() {
   const handleUnlist = async (slaveId: number) => {
     setActionLoading(`unlist-${slaveId}`);
     try {
-      const response = await fetch('/api/market/unlist', {
+      const response = await fetch(API_URL + '/api/market/unlist', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -486,7 +487,7 @@ export default function App() {
   const handleBuySlot = async () => {
     setActionLoading('buy-slot');
     try {
-      const response = await fetch('/api/buy-slot', {
+      const response = await fetch(API_URL + '/api/buy-slot', {
         method: 'POST',
         headers: { 'x-telegram-init-data': WebApp.initData },
       });
