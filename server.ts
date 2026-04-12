@@ -394,7 +394,7 @@ app.get("/api/market/my-listings", validateTelegram, async (req, res) => {
   }
 });
 
-app.get("/api/profile/:id", validateTelegram, async (req, res) => {
+app.get("/api/profile/:id", async (req, res) => {
   const targetId = Number(req.params.id); // Превращаем строку в число обязательно!
   if (isNaN(targetId)) return res.status(400).json({ error: "Invalid ID" });
 
