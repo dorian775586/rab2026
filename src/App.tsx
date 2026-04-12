@@ -38,6 +38,9 @@ interface UserData {
   level: number;
   ghost_until: string | null;
   no_commission: boolean;
+  on_market: boolean;
+  market_price: number | null;
+  market_slots_unlocked: number;
   owner_id: number | null;
   owner?: { username: string };
   last_collect_time: string;
@@ -480,6 +483,24 @@ export default function App() {
     }
   };
 
+  const handleBuySlot = async () => {
+    setActionLoading('buy-slot');
+    try {
+      const response = await fetch('/api/buy-slot', {
+        method: 'POST',
+        headers: { 'x-telegram-init-data': WebApp.initData },
+      });
+      if (response.ok) {
+        WebApp.showAlert('Слот успешно разблокирован!');
+        fetchUser();
+      }
+    } catch (err) {
+      WebApp.showAlert('Ошибка покупки слота');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   if (loading) {
     return (
       <div className="h-screen flex items-center justify-center">
@@ -649,14 +670,24 @@ export default function App() {
                   <div className="grid grid-cols-2 gap-3">
                     {[...Array(20)].map((_, i) => {
                       const listing = myListings[i];
-                      const isLocked = i >= 2; 
+                      const isUnlocked = i < (user?.market_slots_unlocked || 1);
                       const slotPrice = i === 1 ? '1000 монет' : i > 1 ? `${25 + (i-2)*25} Stars` : 'Бесплатно';
                       
                       return (
                         <div 
                           key={i}
-                          onClick={() => !listing && !isLocked && setListingModal({ isOpen: true, slotIndex: i })}
-                          className={`glass-card p-4 h-32 flex flex-col items-center justify-center border-dashed border-2 transition-all ${listing ? 'border-crypto-gold/30 bg-crypto-gold/5' : isLocked ? 'border-white/5 opacity-50' : 'border-white/5 hover:border-white/20 cursor-pointer'}`}
+                          onClick={() => {
+                            if (listing) return;
+                            if (isUnlocked) {
+                              setListingModal({ isOpen: true, slotIndex: i });
+                            } else if (i === 1) {
+                              // 2nd slot can be auto-bought via listing or we can show a prompt
+                              setListingModal({ isOpen: true, slotIndex: i });
+                            } else {
+                              WebApp.showAlert(`Этот слот заблокирован. Разблокируйте его в магазине за Stars!`);
+                            }
+                          }}
+                          className={`glass-card p-4 h-32 flex flex-col items-center justify-center border-dashed border-2 transition-all ${listing ? 'border-crypto-gold/30 bg-crypto-gold/5' : !isUnlocked ? 'border-white/5 opacity-50' : 'border-white/5 hover:border-white/20 cursor-pointer'}`}
                         >
                           {listing ? (
                             <div className="w-full h-full flex flex-col items-center justify-center text-center">
@@ -672,8 +703,8 @@ export default function App() {
                             </div>
                           ) : (
                             <div className="flex flex-col items-center text-center">
-                              {isLocked ? <Lock className="w-5 h-5 mb-1 text-slate-600" /> : <Plus className="w-5 h-5 mb-1 text-crypto-gold" />}
-                              <span className="text-[8px] font-black uppercase tracking-widest mb-1">{isLocked ? 'Заблокировано' : 'Выставить'}</span>
+                              {!isUnlocked ? <Lock className="w-5 h-5 mb-1 text-slate-600" /> : <Plus className="w-5 h-5 mb-1 text-crypto-gold" />}
+                              <span className="text-[8px] font-black uppercase tracking-widest mb-1">{!isUnlocked ? 'Заблокировано' : 'Выставить'}</span>
                               <span className="text-[7px] font-bold text-slate-500 uppercase">{slotPrice}</span>
                             </div>
                           )}

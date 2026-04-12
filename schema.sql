@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
     no_commission BOOLEAN DEFAULT FALSE,
     on_market BOOLEAN DEFAULT FALSE,
     market_price BIGINT,
+    market_slots_unlocked INTEGER DEFAULT 1,
     last_collect_time TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     last_free_spin TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
@@ -162,7 +163,7 @@ CREATE OR REPLACE FUNCTION list_on_market(
 ) RETURNS JSON AS $$
 DECLARE
     listing_count INTEGER;
-    cost BIGINT := 0;
+    slots_unlocked INTEGER;
     u RECORD;
 BEGIN
     -- Check ownership
@@ -170,23 +171,24 @@ BEGIN
         RETURN json_build_object('success', false, 'message', 'Вы не владелец этого раба');
     END IF;
 
-    SELECT COUNT(*) INTO listing_count FROM market_listings WHERE seller_id = seller_id;
+    SELECT COUNT(*), (SELECT market_slots_unlocked FROM users WHERE telegram_id = seller_id) 
+    INTO listing_count, slots_unlocked 
+    FROM market_listings WHERE seller_id = seller_id;
     
-    IF listing_count = 1 THEN
-        cost := 1000;
-    ELSIF listing_count >= 2 THEN
-        -- Handled by stars in frontend/api for slots 3-20
-        -- But we can check here if they have enough balance if we wanted to allow coins
-        -- For simplicity, let's assume slots 3-20 are checked before calling this
-        NULL;
-    END IF;
-
-    IF cost > 0 THEN
-        SELECT balance INTO u FROM users WHERE telegram_id = seller_id;
-        IF u.balance < cost THEN
-            RETURN json_build_object('success', false, 'message', 'Недостаточно монет для покупки слота');
+    -- If trying to use a locked slot
+    IF listing_count >= slots_unlocked THEN
+        -- Special case: Auto-buy 2nd slot for 1000 coins if they have 1 slot and try to list 2nd
+        IF slots_unlocked = 1 AND listing_count = 1 THEN
+            SELECT balance INTO u FROM users WHERE telegram_id = seller_id;
+            IF u.balance < 1000 THEN
+                RETURN json_build_object('success', false, 'message', 'Недостаточно монет для разблокировки 2-го слота (нужно 1000)');
+            END IF;
+            -- Deduct and unlock
+            UPDATE users SET balance = balance - 1000, market_slots_unlocked = 2 WHERE telegram_id = seller_id;
+            slots_unlocked := 2;
+        ELSE
+            RETURN json_build_object('success', false, 'message', 'Нет свободных слотов. Разблокируйте новые слоты в магазине!');
         END IF;
-        UPDATE users SET balance = balance - cost WHERE telegram_id = seller_id;
     END IF;
 
     INSERT INTO market_listings (seller_id, slave_id, price)

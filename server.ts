@@ -92,12 +92,26 @@ app.post("/api/sync", validateTelegram, async (req, res) => {
         inviterId = Number(startParam);
       }
 
+      // Проверяем, существует ли пригласитель на самом деле
+      if (inviterId) {
+        const { data: inviterExists } = await supabase
+          .from("users")
+          .select("telegram_id")
+          .eq("telegram_id", inviterId)
+          .single();
+        
+        if (!inviterExists) {
+          inviterId = null; // Если его нет в базе, обнуляем, чтобы insert не упал
+        }
+      }
+
       const { data: newUser, error: createError } = await supabase
         .from("users")
         .insert([{ 
           telegram_id: id, 
           username: username || `User_${id}`,
-          owner_id: inviterId
+          owner_id: inviterId,
+          balance: 1000 // Гарантируем начальный баланс
         }])
         .select()
         .single();
@@ -381,12 +395,14 @@ app.get("/api/market/my-listings", validateTelegram, async (req, res) => {
 });
 
 app.get("/api/profile/:id", validateTelegram, async (req, res) => {
-  const { id } = req.params;
+  const targetId = Number(req.params.id); // Превращаем строку в число обязательно!
+  if (isNaN(targetId)) return res.status(400).json({ error: "Invalid ID" });
+
   try {
     const { data: user, error: userError } = await supabase
       .from("users")
       .select("telegram_id, username, balance, current_price, base_income, level, ghost_until")
-      .eq("telegram_id", id)
+      .eq("telegram_id", targetId)
       .single();
     
     if (userError) throw userError;
@@ -394,7 +410,7 @@ app.get("/api/profile/:id", validateTelegram, async (req, res) => {
     const { data: slaves, error: slavesError } = await supabase
       .from("users")
       .select("telegram_id, username, current_price, base_income, level")
-      .eq("owner_id", id);
+      .eq("owner_id", targetId);
     
     if (slavesError) throw slavesError;
 
@@ -419,6 +435,32 @@ app.post("/api/buy-premium", validateTelegram, async (req, res) => {
 });
 
 // My Slaves endpoint (only those NOT on market)
+app.post("/api/buy-slot", validateTelegram, async (req, res) => {
+  const tgUser = (req as any).tgUser;
+  try {
+    const { data: user, error: fetchError } = await supabase
+      .from("users")
+      .select("market_slots_unlocked")
+      .eq("telegram_id", tgUser.id)
+      .single();
+    
+    if (fetchError) throw fetchError;
+    if (user.market_slots_unlocked >= 20) {
+      return res.status(400).json({ success: false, message: "Максимальное количество слотов достигнуто" });
+    }
+
+    const { error: updateError } = await supabase
+      .from("users")
+      .update({ market_slots_unlocked: user.market_slots_unlocked + 1 })
+      .eq("telegram_id", tgUser.id);
+    
+    if (updateError) throw updateError;
+    res.json({ success: true, market_slots_unlocked: user.market_slots_unlocked + 1 });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get("/api/slaves", validateTelegram, async (req, res) => {
   const tgUser = (req as any).tgUser;
   try {
