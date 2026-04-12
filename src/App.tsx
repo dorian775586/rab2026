@@ -89,7 +89,7 @@ export default function App() {
   const [listingSlaveId, setListingSlaveId] = useState<number | null>(null);
   const [shopModal, setShopModal] = useState<{ type: 'stars' | 'coins' | 'premium', isOpen: boolean } | null>(null);
 
-  const botUsername = 'CryptoSlavesBot'; // Fallback bot username
+  const botUsername = 'rabygame_bot'; // Обновлено на реальное имя бота
 
   // Real-time balance update
   useEffect(() => {

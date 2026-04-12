@@ -85,14 +85,14 @@ app.post("/api/sync", validateTelegram, async (req, res) => {
     let { data: user, error } = await supabase
       .from("users")
       .select("*, owner:owner_id(username)")
-      .eq("telegram_id", id)
+      .eq("telegram_id", String(id))
       .single();
 
     if (error && error.code === "PGRST116") {
       // User doesn't exist, create them
-      let inviterId: number | null = null;
+      let inviterId: string | null = null;
       if (startParam && !isNaN(Number(startParam))) {
-        inviterId = Number(startParam);
+        inviterId = String(startParam);
       }
 
       // Проверяем, существует ли пригласитель на самом деле
@@ -111,7 +111,7 @@ app.post("/api/sync", validateTelegram, async (req, res) => {
       const { data: newUser, error: createError } = await supabase
         .from("users")
         .insert([{ 
-          telegram_id: id, 
+          telegram_id: String(id), 
           username: username || `User_${id}`,
           owner_id: inviterId,
           balance: 1000 // Гарантируем начальный баланс
@@ -141,7 +141,7 @@ app.post("/api/sync", validateTelegram, async (req, res) => {
       const { count: activeSlavesCount } = await supabase
         .from("users")
         .select("*", { count: 'exact', head: true })
-        .eq("owner_id", id)
+        .eq("owner_id", String(id))
         .eq("on_market", false);
 
       const income = diffMins * (user.base_income + (activeSlavesCount || 0));
@@ -151,7 +151,7 @@ app.post("/api/sync", validateTelegram, async (req, res) => {
           balance: user.balance + income,
           last_collect_time: now.toISOString()
         })
-        .eq("telegram_id", id)
+        .eq("telegram_id", String(id))
         .select("*, owner:owner_id(username)")
         .single();
       
@@ -163,7 +163,7 @@ app.post("/api/sync", validateTelegram, async (req, res) => {
     const { count: slavesCount } = await supabase
       .from("users")
       .select("*", { count: 'exact', head: true })
-      .eq("owner_id", id);
+      .eq("owner_id", String(id));
 
     res.json({ ...user, slaves_count: slavesCount || 0 });
   } catch (err: any) {
@@ -177,8 +177,8 @@ app.post("/api/upgrade", validateTelegram, async (req, res) => {
   const { targetId } = req.body;
   try {
     const { data, error } = await supabase.rpc("upgrade_user", { 
-      buyer_id: tgUser.id,
-      target_id: targetId || tgUser.id 
+      buyer_id: String(tgUser.id),
+      target_id: String(targetId || tgUser.id) 
     });
     if (error) throw error;
     res.json(data);
@@ -191,7 +191,7 @@ app.post("/api/sell", validateTelegram, async (req, res) => {
   const tgUser = (req as any).tgUser;
   const { slaveId } = req.body;
   try {
-    const { data, error } = await supabase.rpc("sell_slave", { owner_id: tgUser.id, slave_id: slaveId });
+    const { data, error } = await supabase.rpc("sell_slave", { owner_id: String(tgUser.id), slave_id: String(slaveId) });
     if (error) throw error;
     res.json(data);
   } catch (err: any) {
@@ -204,17 +204,17 @@ app.post("/api/spin", validateTelegram, async (req, res) => {
   let { bet, isFree } = req.body;
   try {
     if (isFree) {
-      const { data: user } = await supabase.from("users").select("last_free_spin").eq("telegram_id", tgUser.id).single();
+      const { data: user } = await supabase.from("users").select("last_free_spin").eq("telegram_id", String(tgUser.id)).single();
       const lastFree = user?.last_free_spin ? new Date(user.last_free_spin) : new Date(0);
       const now = new Date();
       if (now.getTime() - lastFree.getTime() < 24 * 60 * 60 * 1000) {
         return res.status(400).json({ success: false, message: "Бесплатный спин доступен раз в 24 часа" });
       }
       bet = 100; // Free spin is always for 100 bet
-      await supabase.from("users").update({ last_free_spin: now.toISOString() }).eq("telegram_id", tgUser.id);
+      await supabase.from("users").update({ last_free_spin: now.toISOString() }).eq("telegram_id", String(tgUser.id));
     }
 
-    const { data, error } = await supabase.rpc("spin_roulette", { user_id: tgUser.id, bet, is_free: isFree });
+    const { data, error } = await supabase.rpc("spin_roulette", { user_id: String(tgUser.id), bet, is_free: isFree });
     if (error) throw error;
     res.json(data);
   } catch (err: any) {
@@ -239,7 +239,7 @@ app.get("/api/globals", async (req, res) => {
 app.post("/api/buy-ghost-short", validateTelegram, async (req, res) => {
   const tgUser = (req as any).tgUser;
   try {
-    const { data: user } = await supabase.from("users").select("balance, base_income").eq("telegram_id", tgUser.id).single();
+    const { data: user } = await supabase.from("users").select("balance, base_income").eq("telegram_id", String(tgUser.id)).single();
     const cost = (user?.base_income || 0) * 20;
     
     if ((user?.balance || 0) < cost) {
@@ -253,7 +253,7 @@ app.post("/api/buy-ghost-short", validateTelegram, async (req, res) => {
         balance: (user?.balance || 0) - cost,
         ghost_until: ghostUntil 
       })
-      .eq("telegram_id", tgUser.id);
+      .eq("telegram_id", String(tgUser.id));
     
     if (error) throw error;
     res.json({ success: true, ghost_until: ghostUntil });
@@ -268,7 +268,7 @@ app.post("/api/buy-ghost", validateTelegram, async (req, res) => {
     const { error } = await supabase
       .from("users")
       .update({ ghost_until: ghostUntil })
-      .eq("telegram_id", tgUser.id);
+      .eq("telegram_id", String(tgUser.id));
     if (error) throw error;
     res.json({ success: true, ghost_until: ghostUntil });
   } catch (err: any) {
@@ -280,11 +280,11 @@ app.post("/api/buy-coins", validateTelegram, async (req, res) => {
   const tgUser = (req as any).tgUser;
   const { amount } = req.body;
   try {
-    const { data: user } = await supabase.from("users").select("balance").eq("telegram_id", tgUser.id).single();
+    const { data: user } = await supabase.from("users").select("balance").eq("telegram_id", String(tgUser.id)).single();
     const { error } = await supabase
       .from("users")
       .update({ balance: (user?.balance || 0) + amount })
-      .eq("telegram_id", tgUser.id);
+      .eq("telegram_id", String(tgUser.id));
     if (error) throw error;
     res.json({ success: true });
   } catch (err: any) {
@@ -301,8 +301,8 @@ app.post("/api/buy", validateTelegram, async (req, res) => {
 
   try {
     const { data, error } = await supabase.rpc("purchase_user", {
-      buyer_id: tgUser.id,
-      target_id: targetId
+      buyer_id: String(tgUser.id),
+      target_id: String(targetId)
     });
 
     if (error) throw error;
@@ -342,8 +342,8 @@ app.post("/api/market/list", validateTelegram, async (req, res) => {
   const { slaveId, price } = req.body;
   try {
     const { data, error } = await supabase.rpc("list_on_market", {
-      seller_id: tgUser.id,
-      slave_id: slaveId,
+      seller_id: String(tgUser.id),
+      slave_id: String(slaveId),
       price
     });
     if (error) throw error;
@@ -358,8 +358,8 @@ app.post("/api/market/buy", validateTelegram, async (req, res) => {
   const { slaveId } = req.body;
   try {
     const { data, error } = await supabase.rpc("buy_from_market", {
-      buyer_id: tgUser.id,
-      slave_id: slaveId
+      buyer_id: String(tgUser.id),
+      slave_id: String(slaveId)
     });
     if (error) throw error;
     res.json(data);
@@ -373,8 +373,8 @@ app.post("/api/market/unlist", validateTelegram, async (req, res) => {
   const { slaveId } = req.body;
   try {
     const { data, error } = await supabase.rpc("unlist_from_market", {
-      seller_id: tgUser.id,
-      slave_id: slaveId
+      seller_id: String(tgUser.id),
+      slave_id: String(slaveId)
     });
     if (error) throw error;
     res.json(data);
@@ -389,7 +389,7 @@ app.get("/api/market/my-listings", validateTelegram, async (req, res) => {
     const { data, error } = await supabase
       .from("market_listings")
       .select("*, slave:slave_id(telegram_id, username, current_price, base_income, level)")
-      .eq("seller_id", tgUser.id);
+      .eq("seller_id", String(tgUser.id));
     if (error) throw error;
     res.json(data);
   } catch (err: any) {
@@ -398,9 +398,8 @@ app.get("/api/market/my-listings", validateTelegram, async (req, res) => {
 });
 
 app.get("/api/profile/:id", async (req, res) => {
-  const targetId = Number(req.params.id); // Превращаем строку в число обязательно!
-  if (isNaN(targetId)) return res.status(400).json({ error: "Invalid ID" });
-
+  const targetId = String(req.params.id); // Используем строку для BigInt
+  
   try {
     const { data: user, error: userError } = await supabase
       .from("users")
@@ -429,7 +428,7 @@ app.post("/api/buy-premium", validateTelegram, async (req, res) => {
     const { error } = await supabase
       .from("users")
       .update({ no_commission: true })
-      .eq("telegram_id", tgUser.id);
+      .eq("telegram_id", String(tgUser.id));
     if (error) throw error;
     res.json({ success: true });
   } catch (err: any) {
@@ -444,7 +443,7 @@ app.post("/api/buy-slot", validateTelegram, async (req, res) => {
     const { data: user, error: fetchError } = await supabase
       .from("users")
       .select("market_slots_unlocked")
-      .eq("telegram_id", tgUser.id)
+      .eq("telegram_id", String(tgUser.id))
       .single();
     
     if (fetchError) throw fetchError;
@@ -455,7 +454,7 @@ app.post("/api/buy-slot", validateTelegram, async (req, res) => {
     const { error: updateError } = await supabase
       .from("users")
       .update({ market_slots_unlocked: user.market_slots_unlocked + 1 })
-      .eq("telegram_id", tgUser.id);
+      .eq("telegram_id", String(tgUser.id));
     
     if (updateError) throw updateError;
     res.json({ success: true, market_slots_unlocked: user.market_slots_unlocked + 1 });
@@ -470,7 +469,7 @@ app.get("/api/slaves", validateTelegram, async (req, res) => {
     const { data, error } = await supabase
       .from("users")
       .select("telegram_id, username, current_price, base_income, level")
-      .eq("owner_id", tgUser.id)
+      .eq("owner_id", String(tgUser.id))
       .eq("on_market", false);
     
     if (error) throw error;
