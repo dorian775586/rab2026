@@ -111,6 +111,10 @@ export default function App() {
 
   const copyReferralLink = () => {
     const userId = user?.telegram_id || WebApp.initDataUnsafe.user?.id;
+    if (!userId) {
+      WebApp.showAlert('Ошибка: ID пользователя не найден. Попробуйте перезапустить бота.');
+      return;
+    }
     const link = `https://t.me/${botUsername}?start=${userId}`;
     navigator.clipboard.writeText(link);
     WebApp.showAlert('Ссылка скопирована!');
@@ -119,6 +123,10 @@ export default function App() {
 
   const shareReferralLink = () => {
     const userId = user?.telegram_id || WebApp.initDataUnsafe.user?.id;
+    if (!userId) {
+      WebApp.showAlert('Ошибка: ID пользователя не найден. Попробуйте перезапустить бота.');
+      return;
+    }
     const link = `https://t.me/${botUsername}?start=${userId}`;
     const text = 'Стань моим рабом в Crypto Slaves и начни зарабатывать! ⛓️💰';
     WebApp.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`);
