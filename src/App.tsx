@@ -37,10 +37,12 @@ interface UserData {
   base_income: number;
   level: number;
   ghost_until: string | null;
+  no_commission: boolean;
   owner_id: number | null;
   owner?: { username: string };
   last_collect_time: string;
   last_free_spin: string | null;
+  slaves_count: number;
 }
 
 interface MarketUser {
@@ -70,12 +72,51 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<number | string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [marketSort, setMarketSort] = useState<'new' | 'cheap' | 'expensive'>('new');
   const [bet, setBet] = useState(100);
   const [isSpinning, setIsSpinning] = useState(false);
   const [spinResult, setSpinResult] = useState<{ type: string, win: number } | null>(null);
 
   const [selectedSlave, setSelectedSlave] = useState<MarketUser | null>(null);
-  const [shopModal, setShopModal] = useState<{ type: 'stars' | 'coins', isOpen: boolean } | null>(null);
+  const [viewingProfile, setViewingProfile] = useState<(UserData & { slaves: MarketUser[] }) | null>(null);
+  const [myListings, setMyListings] = useState<any[]>([]);
+  const [listingModal, setListingModal] = useState<{ isOpen: boolean, slotIndex: number } | null>(null);
+  const [listingPrice, setListingPrice] = useState<string>('');
+  const [listingSlaveId, setListingSlaveId] = useState<number | null>(null);
+  const [shopModal, setShopModal] = useState<{ type: 'stars' | 'coins' | 'premium', isOpen: boolean } | null>(null);
+
+  const botUsername = 'CryptoSlavesBot'; // Fallback bot username
+
+  // Real-time balance update
+  useEffect(() => {
+    if (!user) return;
+    
+    const interval = setInterval(() => {
+      setUser(prev => {
+        if (!prev) return null;
+        const perSecondIncome = (prev.base_income + (prev.slaves_count || 0)) / 60;
+        return {
+          ...prev,
+          balance: prev.balance + perSecondIncome
+        };
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [user?.base_income, user?.slaves_count]);
+
+  const copyReferralLink = () => {
+    const link = `https://t.me/${botUsername}?start=${user?.telegram_id}`;
+    navigator.clipboard.writeText(link);
+    WebApp.showAlert('Ссылка скопирована!');
+    WebApp.HapticFeedback.notificationOccurred('success');
+  };
+
+  const shareReferralLink = () => {
+    const link = `https://t.me/${botUsername}?start=${user?.telegram_id}`;
+    const text = 'Стань моим рабом в Crypto Slaves и начни зарабатывать! ⛓️💰';
+    WebApp.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`);
+  };
 
   const fetchUser = useCallback(async () => {
     try {
@@ -118,13 +159,37 @@ export default function App() {
 
   const fetchMarket = useCallback(async () => {
     try {
-      const response = await fetch('/api/market', {
+      const response = await fetch(`/api/market?sort=${marketSort}`, {
         headers: { 'x-telegram-init-data': WebApp.initData },
       });
       const data = await response.json();
       if (response.ok) setMarket(data);
     } catch (err) {
       console.error('Fetch market error:', err);
+    }
+  }, [marketSort]);
+
+  const fetchProfile = async (id: number) => {
+    try {
+      const response = await fetch(`/api/profile/${id}`, {
+        headers: { 'x-telegram-init-data': WebApp.initData },
+      });
+      const data = await response.json();
+      if (response.ok) setViewingProfile(data);
+    } catch (err) {
+      WebApp.showAlert('Ошибка загрузки профиля');
+    }
+  };
+
+  const fetchMyListings = useCallback(async () => {
+    try {
+      const response = await fetch('/api/market/my-listings', {
+        headers: { 'x-telegram-init-data': WebApp.initData },
+      });
+      const data = await response.json();
+      if (response.ok) setMyListings(data);
+    } catch (err) {
+      console.error('Fetch my listings error:', err);
     }
   }, []);
 
@@ -155,14 +220,18 @@ export default function App() {
     WebApp.expand();
     fetchUser();
     fetchGlobals();
-  }, [fetchUser, fetchGlobals]);
+    fetchLeaderboard();
+  }, [fetchUser, fetchGlobals, fetchLeaderboard]);
 
   useEffect(() => {
-    if (activeTab === 'slaves') fetchSlaves();
+    if (activeTab === 'slaves') {
+      fetchSlaves();
+      fetchMyListings();
+    }
     if (activeTab === 'market') fetchMarket();
     if (activeTab === 'games') fetchGlobals();
     if (activeTab === 'leaderboard') fetchLeaderboard();
-  }, [activeTab, fetchSlaves, fetchMarket, fetchGlobals, fetchLeaderboard]);
+  }, [activeTab, fetchSlaves, fetchMyListings, fetchMarket, fetchGlobals, fetchLeaderboard]);
 
   const handleBuy = async (targetId: number) => {
     setActionLoading(targetId);
@@ -318,6 +387,25 @@ export default function App() {
     }
   };
 
+  const handleBuyPremium = async () => {
+    setActionLoading('premium');
+    try {
+      const response = await fetch('/api/buy-premium', {
+        method: 'POST',
+        headers: { 'x-telegram-init-data': WebApp.initData },
+      });
+      if (response.ok) {
+        WebApp.showAlert('Статус Premium активирован! Теперь комиссия 0%');
+        fetchUser();
+      }
+    } catch (err) {
+      WebApp.showAlert('Ошибка оплаты');
+    } finally {
+      setActionLoading(null);
+      setShopModal(null);
+    }
+  };
+
   const handleBuyGhostShort = async () => {
     setActionLoading('ghost-short');
     try {
@@ -326,17 +414,67 @@ export default function App() {
         headers: { 'x-telegram-init-data': WebApp.initData },
       });
       const data = await response.json();
-      if (response.ok) {
-        WebApp.showAlert('Невидимка на 60 минут активирована!');
+      if (response.ok && data.success) {
+        WebApp.showAlert('Невидимка активирована на 1 час!');
         fetchUser();
       } else {
-        WebApp.showAlert(data.message || 'Ошибка покупки');
+        WebApp.showAlert(data.message || 'Ошибка оплаты');
       }
     } catch (err) {
-      WebApp.showAlert('Ошибка сети');
+      WebApp.showAlert('Ошибка оплаты');
     } finally {
       setActionLoading(null);
       setShopModal(null);
+    }
+  };
+
+  const handleListSlave = async () => {
+    if (!listingSlaveId || !listingPrice) return;
+    setActionLoading('listing');
+    try {
+      const response = await fetch('/api/market/list', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-telegram-init-data': WebApp.initData 
+        },
+        body: JSON.stringify({ slaveId: listingSlaveId, price: Number(listingPrice) }),
+      });
+      if (response.ok) {
+        WebApp.showAlert('Раб выставлен на рынок!');
+        setListingModal(null);
+        setListingPrice('');
+        setListingSlaveId(null);
+        fetchSlaves();
+        fetchMyListings();
+      }
+    } catch (err) {
+      WebApp.showAlert('Ошибка выставления');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleUnlist = async (slaveId: number) => {
+    setActionLoading(`unlist-${slaveId}`);
+    try {
+      const response = await fetch('/api/market/unlist', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-telegram-init-data': WebApp.initData 
+        },
+        body: JSON.stringify({ slaveId }),
+      });
+      if (response.ok) {
+        WebApp.showAlert('Раб снят с продажи');
+        fetchSlaves();
+        fetchMyListings();
+      }
+    } catch (err) {
+      WebApp.showAlert('Ошибка снятия');
+    } finally {
+      setActionLoading(null);
     }
   };
 
@@ -441,19 +579,26 @@ export default function App() {
 
               {/* Stats Grid */}
               <div className="grid grid-cols-2 gap-4">
-                <div className="glass-card p-5 flex flex-col items-center text-center">
+                <div className="glass-card p-5 flex flex-col items-center text-center relative group">
                   <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center mb-3">
                     <Users className="w-5 h-5 text-blue-500 dark:text-blue-400" />
                   </div>
                   <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase mb-1">Рабы</span>
-                  <span className="text-2xl font-black">{slaves.length}</span>
+                  <span className="text-2xl font-black mb-2">{user?.slaves_count || 0}</span>
+                  
+                  <button 
+                    onClick={shareReferralLink}
+                    className="w-full py-2 rounded-lg bg-crypto-gold text-black text-[9px] font-black uppercase tracking-wider active:scale-95 transition-transform"
+                  >
+                    Добавить раба
+                  </button>
                 </div>
                 <div className="glass-card p-5 flex flex-col items-center text-center">
                   <div className="w-10 h-10 rounded-xl bg-crypto-emerald/10 flex items-center justify-center mb-3">
                     <TrendingUp className="w-5 h-5 text-crypto-emerald" />
                   </div>
                   <span className="text-[10px] text-slate-500 font-bold uppercase mb-1">Доход/мин</span>
-                  <span className="text-2xl font-black text-crypto-emerald">+{user?.base_income}</span>
+                  <span className="text-2xl font-black text-crypto-emerald">+{user ? (user.base_income + (user.slaves_count || 0)) : 0}</span>
                 </div>
               </div>
             </motion.div>
@@ -469,42 +614,178 @@ export default function App() {
             >
               <div className="flex justify-between items-end mb-2">
                 <h2 className="text-xl font-black">Мои Рабы</h2>
-                <span className="text-xs text-slate-500 dark:text-slate-400 font-bold">{slaves.length} всего</span>
+                <div className="flex items-center gap-3">
+                  <button 
+                    onClick={copyReferralLink}
+                    className="p-2 rounded-lg bg-white/5 border border-white/10 text-slate-400 hover:text-crypto-gold transition-colors"
+                    title="Копировать ссылку"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                  </button>
+                  <button 
+                    onClick={shareReferralLink}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-crypto-gold text-black text-[10px] font-black uppercase tracking-wider"
+                  >
+                    <Plus className="w-3 h-3" />
+                    Добавить раба
+                  </button>
+                </div>
               </div>
               
-              {slaves.length === 0 ? (
-                <div className="glass-card py-16 flex flex-col items-center justify-center text-slate-400 dark:text-slate-500">
-                  <Lock className="w-12 h-12 mb-4 opacity-10" />
-                  <p className="text-sm font-medium">У вас пока нет рабов</p>
+              <div className="glass-card p-4 mb-4 bg-crypto-gold/5 border-crypto-gold/20">
+                <p className="text-[10px] text-slate-500 font-bold uppercase mb-2">Ваша реферальная ссылка</p>
+                <div className="flex items-center gap-2 bg-black/20 p-2 rounded-lg border border-white/5">
+                  <code className="text-[10px] flex-1 truncate opacity-70">t.me/{botUsername}?start={user?.telegram_id}</code>
+                  <button onClick={copyReferralLink} className="text-crypto-gold p-1"><Plus className="w-3 h-3 rotate-45" /></button>
                 </div>
-              ) : (
-                <div className="space-y-3">
-                  {slaves.map(slave => (
-                    <div 
-                      key={slave.telegram_id} 
-                      onClick={() => setSelectedSlave(slave)}
-                      className="glass-card p-4 flex justify-between items-center group active:scale-[0.98] transition-all cursor-pointer"
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center border border-black/10 dark:border-white/10">
-                          <User className="w-5 h-5 text-slate-400" />
+                <p className="text-[9px] text-slate-500 mt-2 italic">* Каждый новый раб приносит +1 монету в минуту!</p>
+              </div>
+              
+              <div className="space-y-6">
+                <div className="space-y-4">
+                  <h3 className="text-sm font-black uppercase tracking-widest text-slate-500">Мои объявления</h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    {[...Array(20)].map((_, i) => {
+                      const listing = myListings[i];
+                      const isLocked = i >= 2; // 1 free, 1 for 1000 (handled in RPC), 3-20 for stars
+                      
+                      return (
+                        <div 
+                          key={i}
+                          onClick={() => !listing && !isLocked && setListingModal({ isOpen: true, slotIndex: i })}
+                          className={`glass-card p-4 h-32 flex flex-col items-center justify-center border-dashed border-2 transition-all ${listing ? 'border-crypto-gold/30 bg-crypto-gold/5' : 'border-white/5 hover:border-white/20 cursor-pointer'}`}
+                        >
+                          {listing ? (
+                            <div className="w-full h-full flex flex-col items-center justify-center text-center">
+                              <User className="w-6 h-6 text-crypto-gold mb-2" />
+                              <div className="text-[10px] font-bold truncate w-full">{listing.slave.username}</div>
+                              <div className="text-xs font-black text-crypto-gold">{listing.price.toLocaleString()}</div>
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); handleUnlist(listing.slave_id); }}
+                                className="mt-2 text-[8px] font-black uppercase text-red-400 hover:text-red-300"
+                              >
+                                Снять
+                              </button>
+                            </div>
+                          ) : isLocked ? (
+                            <div className="flex flex-col items-center opacity-30">
+                              <Lock className="w-5 h-5 mb-1" />
+                              <span className="text-[8px] font-black uppercase tracking-widest">{i < 2 ? '1000 монет' : `${25 + (i-2)*25} Stars`}</span>
+                            </div>
+                          ) : (
+                            <div className="flex flex-col items-center text-slate-500">
+                              <Plus className="w-6 h-6 mb-1" />
+                              <span className="text-[8px] font-black uppercase tracking-widest">Выставить</span>
+                            </div>
+                          )}
                         </div>
-                        <div>
-                          <div className="font-bold">{slave.username}</div>
-                          <div className="text-[10px] text-crypto-emerald font-bold">+{slave.base_income} / мин</div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <div className="text-right">
-                          <div className="text-sm font-black">{slave.current_price.toLocaleString()}</div>
-                          <div className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase">Цена</div>
-                        </div>
-                        <ArrowRight className="w-4 h-4 text-slate-400 group-hover:translate-x-1 transition-transform" />
-                      </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <h3 className="text-sm font-black uppercase tracking-widest text-slate-500">Мои Рабы</h3>
+                  {slaves.length === 0 ? (
+                    <div className="glass-card py-16 flex flex-col items-center justify-center text-slate-400 dark:text-slate-500">
+                      <Lock className="w-12 h-12 mb-4 opacity-10" />
+                      <p className="text-sm font-medium">У вас пока нет рабов</p>
                     </div>
-                  ))}
+                  ) : (
+                    <div className="space-y-3">
+                      {slaves.map(slave => (
+                        <div 
+                          key={slave.telegram_id} 
+                          onClick={() => setSelectedSlave(slave)}
+                          className="glass-card p-4 flex justify-between items-center group active:scale-[0.98] transition-all cursor-pointer"
+                        >
+                          <div className="flex items-center gap-4">
+                            <div className="w-10 h-10 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center border border-black/10 dark:border-white/10">
+                              <User className="w-5 h-5 text-slate-400" />
+                            </div>
+                            <div>
+                              <div className="font-bold">{slave.username}</div>
+                              <div className="text-[10px] text-crypto-emerald font-bold">+{slave.base_income} / мин</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <div className="text-right">
+                              <div className="text-sm font-black">{slave.current_price.toLocaleString()}</div>
+                              <div className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase">Цена</div>
+                            </div>
+                            <ArrowRight className="w-4 h-4 text-slate-400 group-hover:translate-x-1 transition-transform" />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              )}
+              </div>
+
+              {/* Listing Modal */}
+              <AnimatePresence>
+                {listingModal?.isOpen && (
+                  <motion.div 
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="fixed inset-0 z-[60] bg-black/90 backdrop-blur-xl flex items-center justify-center px-6"
+                  >
+                    <motion.div 
+                      initial={{ scale: 0.9, y: 20 }}
+                      animate={{ scale: 1, y: 0 }}
+                      className="w-full max-w-sm glass-card p-8 space-y-6 border-white/10"
+                    >
+                      <h3 className="text-xl font-black text-center">Выставить на рынок</h3>
+                      
+                      <div className="space-y-4">
+                        <div>
+                          <label className="text-[10px] font-black uppercase text-slate-500 mb-2 block">Выберите раба</label>
+                          <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto pr-2 no-scrollbar">
+                            {slaves.map(slave => (
+                              <button
+                                key={slave.telegram_id}
+                                onClick={() => setListingSlaveId(slave.telegram_id)}
+                                className={`p-3 rounded-xl border text-left transition-all ${listingSlaveId === slave.telegram_id ? 'bg-crypto-gold text-black border-crypto-gold' : 'bg-white/5 border-white/10 text-white'}`}
+                              >
+                                <div className="font-bold text-sm">{slave.username}</div>
+                                <div className="text-[9px] opacity-70">Стоимость: {slave.current_price.toLocaleString()}</div>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="text-[10px] font-black uppercase text-slate-500 mb-2 block">Цена продажи</label>
+                          <input 
+                            type="number" 
+                            placeholder="Введите цену..."
+                            value={listingPrice}
+                            onChange={(e) => setListingPrice(e.target.value)}
+                            className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 text-sm font-bold focus:outline-none focus:border-crypto-gold/50"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-3">
+                        <button 
+                          onClick={handleListSlave}
+                          disabled={!listingSlaveId || !listingPrice || actionLoading !== null}
+                          className="gold-button w-full py-4 text-sm"
+                        >
+                          {actionLoading === 'listing' ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : "ВЫСТАВИТЬ"}
+                        </button>
+                        <button 
+                          onClick={() => setListingModal(null)}
+                          className="w-full py-2 text-slate-500 font-bold text-xs"
+                        >
+                          ОТМЕНА
+                        </button>
+                      </div>
+                    </motion.div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
               {/* Slave Details Modal/Overlay */}
               <AnimatePresence>
@@ -580,53 +861,120 @@ export default function App() {
               exit={{ opacity: 0, y: -20 }}
               className="space-y-6"
             >
-              <div className="relative">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                <input 
-                  type="text" 
-                  placeholder="Поиск игроков..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-2xl py-4 pl-12 pr-4 text-sm font-medium focus:outline-none focus:border-crypto-gold/50 transition-all"
-                />
+              <div className="flex flex-col gap-4">
+                <div className="relative">
+                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                  <input 
+                    type="text" 
+                    placeholder="Поиск игроков..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-2xl py-4 pl-12 pr-4 text-sm font-medium focus:outline-none focus:border-crypto-gold/50 transition-all"
+                  />
+                </div>
+                
+                <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
+                  <SortTab active={marketSort === 'new'} onClick={() => setMarketSort('new')} label="Новые" />
+                  <SortTab active={marketSort === 'cheap'} onClick={() => setMarketSort('cheap')} label="Дешевые" />
+                  <SortTab active={marketSort === 'expensive'} onClick={() => setMarketSort('expensive')} label="Дорогие" />
+                </div>
               </div>
 
               <div className="space-y-3">
-                {filteredMarket.length === 0 ? (
-                  <div className="text-center py-12 text-slate-500 dark:text-slate-400 font-medium">Никого не найдено</div>
-                ) : (
-                  filteredMarket.map(m => (
-                    <div key={m.telegram_id} className="glass-card p-4 flex justify-between items-center">
-                      <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center border border-black/10 dark:border-white/10">
-                          <User className="w-5 h-5 text-slate-400" />
-                        </div>
-                        <div>
-                          <div className="font-bold">{m.username}</div>
-                          <div className="text-[10px] text-slate-500 dark:text-slate-400 font-bold">Доход: +{m.base_income}</div>
-                        </div>
+                {market.map((listing: any) => (
+                  <div key={listing.id} className="glass-card p-4 flex justify-between items-center">
+                    <div className="flex items-center gap-4" onClick={() => fetchProfile(listing.slave.telegram_id)}>
+                      <div className="w-10 h-10 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center border border-black/10 dark:border-white/10">
+                        <User className="w-5 h-5 text-slate-400" />
                       </div>
-                      <div className="flex items-center gap-4">
-                        <div className="text-right">
-                          <div className="text-sm font-black text-crypto-gold">{m.current_price.toLocaleString()}</div>
-                          <div className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase leading-none">Цена</div>
-                        </div>
-                        <button 
-                          onClick={() => handleBuy(m.telegram_id)}
-                          disabled={actionLoading === m.telegram_id || (user?.balance || 0) < m.current_price}
-                          className="emerald-button"
-                        >
-                          {actionLoading === m.telegram_id ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                          ) : (
-                            'КУПИТЬ'
-                          )}
-                        </button>
+                      <div>
+                        <div className="font-bold">{listing.slave.username}</div>
+                        <div className="text-[10px] text-slate-500 dark:text-slate-400 font-bold">Уровень {listing.slave.level}</div>
                       </div>
                     </div>
-                  ))
-                )}
+                    <div className="flex items-center gap-4">
+                      <div className="text-right">
+                        <div className="text-sm font-black text-crypto-gold">{listing.price.toLocaleString()}</div>
+                        <div className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase leading-none">Цена</div>
+                      </div>
+                      <button 
+                        onClick={() => handleBuy(listing.slave.telegram_id)}
+                        disabled={actionLoading === listing.slave.telegram_id || (user?.balance || 0) < listing.price}
+                        className="emerald-button"
+                      >
+                        КУПИТЬ
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
+
+              {/* Profile View Modal */}
+              <AnimatePresence>
+                {viewingProfile && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 100 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 100 }}
+                    className="fixed inset-0 z-[70] bg-black/95 backdrop-blur-2xl flex items-end"
+                  >
+                    <div className="w-full bg-[var(--crypto-bg)] rounded-t-[32px] p-8 space-y-6 border-t border-white/10 max-h-[90vh] overflow-y-auto">
+                      <div className="flex justify-between items-center">
+                        <div className="flex items-center gap-4">
+                          <div className="w-14 h-14 rounded-full bg-crypto-gold/10 flex items-center justify-center">
+                            <User className="w-8 h-8 text-crypto-gold" />
+                          </div>
+                          <div>
+                            <h3 className="text-2xl font-black">{viewingProfile.username}</h3>
+                            <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">Уровень {viewingProfile.level}</p>
+                          </div>
+                        </div>
+                        <button onClick={() => setViewingProfile(null)} className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center font-bold">✕</button>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="glass-card p-4">
+                          <span className="text-[10px] text-slate-500 font-bold uppercase">Баланс</span>
+                          <div className="text-xl font-black text-crypto-gold">{viewingProfile.balance.toLocaleString()}</div>
+                        </div>
+                        <div className="glass-card p-4">
+                          <span className="text-[10px] text-slate-500 font-bold uppercase">Доход</span>
+                          <div className="text-xl font-black text-crypto-emerald">+{viewingProfile.base_income} / мин</div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-4">
+                        <h4 className="text-sm font-black uppercase tracking-widest text-slate-500">Рабы игрока ({viewingProfile.slaves.length})</h4>
+                        <div className="space-y-3">
+                          {viewingProfile.slaves.map(slave => (
+                            <div key={slave.telegram_id} className="glass-card p-4 flex justify-between items-center">
+                              <div className="flex items-center gap-3">
+                                <User className="w-4 h-4 text-slate-500" />
+                                <span className="font-bold">{slave.username}</span>
+                              </div>
+                              <button 
+                                onClick={() => handleBuy(slave.telegram_id)}
+                                className="emerald-button text-[10px] py-2 px-4"
+                              >
+                                КУПИТЬ ({(slave.current_price * 2).toLocaleString()})
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <button 
+                        onClick={() => handleBuy(viewingProfile.telegram_id)}
+                        disabled={viewingProfile.ghost_until && new Date(viewingProfile.ghost_until) > new Date()}
+                        className="gold-button w-full py-4 flex flex-col h-auto"
+                      >
+                        <span className="text-xs">КУПИТЬ ИГРОКА</span>
+                        <span className="text-sm opacity-80">{viewingProfile.current_price.toLocaleString()} МОНЕТ</span>
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </motion.div>
           )}
 
@@ -645,37 +993,37 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="relative py-12 flex flex-col items-center">
+              <div className="relative py-4 flex flex-col items-center">
                 {/* Indicator */}
-                <div className="absolute top-8 left-1/2 -translate-x-1/2 z-20">
-                  <div className="w-6 h-8 bg-crypto-gold rounded-b-full shadow-lg flex items-center justify-center">
-                    <div className="w-2 h-2 bg-black rounded-full" />
+                <div className="absolute top-0 left-1/2 -translate-x-1/2 z-20">
+                  <div className="w-4 h-6 bg-crypto-gold rounded-b-full shadow-lg flex items-center justify-center">
+                    <div className="w-1 h-1 bg-black rounded-full" />
                   </div>
                 </div>
 
                 <motion.div 
                   animate={isSpinning ? { rotate: 3600 } : { rotate: 0 }}
                   transition={isSpinning ? { duration: 3, ease: [0.45, 0.05, 0.55, 0.95] } : { duration: 0 }}
-                  className="w-72 h-72 rounded-full border-[16px] border-crypto-gold/30 relative flex items-center justify-center bg-black/20 shadow-[0_0_60px_rgba(251,191,36,0.15)] overflow-hidden"
+                  className="w-48 h-48 rounded-full border-[10px] border-crypto-gold/30 relative flex items-center justify-center bg-black/20 shadow-[0_0_30px_rgba(251,191,36,0.1)] overflow-hidden"
                 >
                   {/* Wheel Segments (Visual only) */}
                   <div className="absolute inset-0 opacity-20">
                     {[...Array(8)].map((_, i) => (
                       <div 
                         key={i} 
-                        className="absolute top-0 left-1/2 w-1 h-full bg-crypto-gold origin-bottom"
+                        className="absolute top-0 left-1/2 w-0.5 h-full bg-crypto-gold origin-bottom"
                         style={{ transform: `translateX(-50%) rotate(${i * 45}deg)` }}
                       />
                     ))}
                   </div>
-                  <Dices className={`w-24 h-24 text-crypto-gold ${isSpinning ? 'animate-pulse' : ''}`} />
+                  <Dices className={`w-12 h-12 text-crypto-gold ${isSpinning ? 'animate-pulse' : ''}`} />
                 </motion.div>
 
                 <motion.button 
                   onClick={() => handleSpin(false)}
                   disabled={isSpinning || (user?.balance || 0) < bet}
                   whileTap={{ scale: 0.9 }}
-                  className={`mt-8 gold-button px-12 py-5 rounded-3xl text-xl font-black shadow-[0_10px_40px_rgba(251,191,36,0.3)] ${isSpinning ? 'opacity-50 cursor-not-allowed' : 'animate-pulse-slow'}`}
+                  className={`mt-4 gold-button px-8 py-3 rounded-xl text-base font-black shadow-[0_10px_20px_rgba(251,191,36,0.15)] ${isSpinning ? 'opacity-50 cursor-not-allowed' : 'animate-pulse-slow'}`}
                 >
                   SPIN
                 </motion.button>
@@ -747,11 +1095,11 @@ export default function App() {
                   loading={actionLoading === 'buy-5000'}
                 />
                 <ShopItem 
-                  title="50,000 МОНЕТ" 
-                  price="1500 Stars" 
-                  icon={<Zap className="w-8 h-8 text-crypto-gold" />}
-                  onClick={() => handleBuyCoins(50000, 1500)}
-                  loading={actionLoading === 'buy-50000'}
+                  title="PREMIUM СТАТУС" 
+                  price="50 Stars" 
+                  icon={<Crown className="w-6 h-6 text-crypto-gold" />}
+                  onClick={() => setShopModal({ type: 'premium', isOpen: true })}
+                  loading={actionLoading === 'premium'}
                 />
                 
                 <div className="glass-card p-5 border-blue-500/30 bg-blue-500/5 flex justify-between items-center">
@@ -821,12 +1169,12 @@ export default function App() {
 
                       <div className="space-y-3">
                         <button 
-                          onClick={shopModal.type === 'stars' ? handleBuyGhost : handleBuyGhostShort}
+                          onClick={shopModal.type === 'stars' ? handleBuyGhost : shopModal.type === 'premium' ? handleBuyPremium : handleBuyGhostShort}
                           disabled={actionLoading !== null}
                           className="gold-button w-full py-4 text-base"
                         >
                           {actionLoading !== null ? <Loader2 className="w-6 h-6 animate-spin mx-auto" /> : (
-                            shopModal.type === 'stars' ? "КУПИТЬ ЗА 50 ⭐" : `КУПИТЬ ЗА ${((user?.base_income || 0) * 20).toLocaleString()} МОНЕТ`
+                            shopModal.type === 'stars' ? "КУПИТЬ ЗА 50 ⭐" : shopModal.type === 'premium' ? "КУПИТЬ ЗА 50 ⭐" : `КУПИТЬ ЗА ${((user?.base_income || 0) * 20).toLocaleString()} МОНЕТ`
                           )}
                         </button>
                         <button 
@@ -924,6 +1272,17 @@ function NavButton({ active, onClick, icon, label }: { active: boolean, onClick:
       )}
       <div className="mb-1">{icon}</div>
       <span className="text-[8px] font-black uppercase tracking-wider">{label}</span>
+    </button>
+  );
+}
+
+function SortTab({ active, onClick, label }: { active: boolean, onClick: () => void, label: string }) {
+  return (
+    <button 
+      onClick={onClick}
+      className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider whitespace-nowrap transition-all ${active ? 'bg-crypto-gold text-black' : 'bg-white/5 text-slate-500 border border-white/5'}`}
+    >
+      {label}
     </button>
   );
 }

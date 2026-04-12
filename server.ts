@@ -120,7 +120,14 @@ app.post("/api/sync", validateTelegram, async (req, res) => {
     const diffMins = Math.floor(diffMs / 60000);
 
     if (diffMins > 0) {
-      const income = diffMins * user.base_income;
+      // Get slaves count for additional income (only those NOT on market)
+      const { count: activeSlavesCount } = await supabase
+        .from("users")
+        .select("*", { count: 'exact', head: true })
+        .eq("owner_id", id)
+        .eq("on_market", false);
+
+      const income = diffMins * (user.base_income + (activeSlavesCount || 0));
       const { data: updatedUser, error: updateError } = await supabase
         .from("users")
         .update({ 
@@ -135,7 +142,13 @@ app.post("/api/sync", validateTelegram, async (req, res) => {
       user = updatedUser;
     }
 
-    res.json(user);
+    // Get slaves count for the response
+    const { count: slavesCount } = await supabase
+      .from("users")
+      .select("*", { count: 'exact', head: true })
+      .eq("owner_id", id);
+
+    res.json({ ...user, slaves_count: slavesCount || 0 });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -171,8 +184,19 @@ app.post("/api/sell", validateTelegram, async (req, res) => {
 
 app.post("/api/spin", validateTelegram, async (req, res) => {
   const tgUser = (req as any).tgUser;
-  const { bet, isFree } = req.body;
+  let { bet, isFree } = req.body;
   try {
+    if (isFree) {
+      const { data: user } = await supabase.from("users").select("last_free_spin").eq("telegram_id", tgUser.id).single();
+      const lastFree = user?.last_free_spin ? new Date(user.last_free_spin) : new Date(0);
+      const now = new Date();
+      if (now.getTime() - lastFree.getTime() < 24 * 60 * 60 * 1000) {
+        return res.status(400).json({ success: false, message: "Бесплатный спин доступен раз в 24 часа" });
+      }
+      bet = 100; // Free spin is always for 100 bet
+      await supabase.from("users").update({ last_free_spin: now.toISOString() }).eq("telegram_id", tgUser.id);
+    }
+
     const { data, error } = await supabase.rpc("spin_roulette", { user_id: tgUser.id, bet, is_free: isFree });
     if (error) throw error;
     res.json(data);
@@ -276,14 +300,19 @@ app.post("/api/buy", validateTelegram, async (req, res) => {
   }
 });
 
-// Market endpoint: List users to buy
+// Market endpoints
 app.get("/api/market", validateTelegram, async (req, res) => {
+  const { sort } = req.query;
   try {
-    const { data, error } = await supabase
-      .from("users")
-      .select("telegram_id, username, current_price, base_income")
-      .limit(50);
-    
+    let query = supabase
+      .from("market_listings")
+      .select("*, slave:slave_id(telegram_id, username, current_price, base_income, level)");
+
+    if (sort === "cheap") query = query.order("price", { ascending: true });
+    else if (sort === "expensive") query = query.order("price", { ascending: false });
+    else query = query.order("created_at", { ascending: false });
+
+    const { data, error } = await query.limit(50);
     if (error) throw error;
     res.json(data);
   } catch (err: any) {
@@ -291,14 +320,113 @@ app.get("/api/market", validateTelegram, async (req, res) => {
   }
 });
 
-// My Slaves endpoint
+app.post("/api/market/list", validateTelegram, async (req, res) => {
+  const tgUser = (req as any).tgUser;
+  const { slaveId, price } = req.body;
+  try {
+    const { data, error } = await supabase.rpc("list_on_market", {
+      seller_id: tgUser.id,
+      slave_id: slaveId,
+      price
+    });
+    if (error) throw error;
+    res.json(data);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/market/buy", validateTelegram, async (req, res) => {
+  const tgUser = (req as any).tgUser;
+  const { slaveId } = req.body;
+  try {
+    const { data, error } = await supabase.rpc("buy_from_market", {
+      buyer_id: tgUser.id,
+      slave_id: slaveId
+    });
+    if (error) throw error;
+    res.json(data);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/market/unlist", validateTelegram, async (req, res) => {
+  const tgUser = (req as any).tgUser;
+  const { slaveId } = req.body;
+  try {
+    const { data, error } = await supabase.rpc("unlist_from_market", {
+      seller_id: tgUser.id,
+      slave_id: slaveId
+    });
+    if (error) throw error;
+    res.json(data);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/market/my-listings", validateTelegram, async (req, res) => {
+  const tgUser = (req as any).tgUser;
+  try {
+    const { data, error } = await supabase
+      .from("market_listings")
+      .select("*, slave:slave_id(telegram_id, username, current_price, base_income, level)")
+      .eq("seller_id", tgUser.id);
+    if (error) throw error;
+    res.json(data);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/profile/:id", validateTelegram, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const { data: user, error: userError } = await supabase
+      .from("users")
+      .select("telegram_id, username, balance, current_price, base_income, level, ghost_until")
+      .eq("telegram_id", id)
+      .single();
+    
+    if (userError) throw userError;
+
+    const { data: slaves, error: slavesError } = await supabase
+      .from("users")
+      .select("telegram_id, username, current_price, base_income, level")
+      .eq("owner_id", id);
+    
+    if (slavesError) throw slavesError;
+
+    res.json({ ...user, slaves });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/buy-premium", validateTelegram, async (req, res) => {
+  const tgUser = (req as any).tgUser;
+  try {
+    const { error } = await supabase
+      .from("users")
+      .update({ no_commission: true })
+      .eq("telegram_id", tgUser.id);
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// My Slaves endpoint (only those NOT on market)
 app.get("/api/slaves", validateTelegram, async (req, res) => {
   const tgUser = (req as any).tgUser;
   try {
     const { data, error } = await supabase
       .from("users")
       .select("telegram_id, username, current_price, base_income, level")
-      .eq("owner_id", tgUser.id);
+      .eq("owner_id", tgUser.id)
+      .eq("on_market", false);
     
     if (error) throw error;
     res.json(data);

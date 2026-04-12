@@ -8,9 +8,22 @@ CREATE TABLE IF NOT EXISTS users (
     base_income BIGINT DEFAULT 1,
     level INTEGER DEFAULT 1, -- Max 20
     ghost_until TIMESTAMP WITH TIME ZONE,
+    no_commission BOOLEAN DEFAULT FALSE,
+    on_market BOOLEAN DEFAULT FALSE,
+    market_price BIGINT,
     last_collect_time TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     last_free_spin TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Marketplace listings table
+CREATE TABLE IF NOT EXISTS market_listings (
+    id SERIAL PRIMARY KEY,
+    seller_id BIGINT REFERENCES users(telegram_id),
+    slave_id BIGINT REFERENCES users(telegram_id),
+    price BIGINT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(slave_id)
 );
 
 -- Global state for jackpot
@@ -61,12 +74,20 @@ BEGIN
     -- Deduct cost
     UPDATE users SET balance = balance - cost WHERE telegram_id = buyer_id;
 
-    -- Owner payout (Price - 10% commission)
+    -- Owner payout (Price - 5% commission unless no_commission)
     prev_owner_id := target_user.owner_id;
     IF prev_owner_id IS NOT NULL THEN
-        owner_payout := floor(price * 0.9);
+        IF (SELECT no_commission FROM users WHERE telegram_id = prev_owner_id) THEN
+            owner_payout := price;
+        ELSE
+            owner_payout := floor(price * 0.95);
+        END IF;
         UPDATE users SET balance = balance + owner_payout WHERE telegram_id = prev_owner_id;
     END IF;
+
+    -- Clear market status if bought
+    UPDATE users SET on_market = FALSE, market_price = NULL WHERE telegram_id = target_id;
+    DELETE FROM market_listings WHERE slave_id = target_id;
 
     -- Change owner and increase price
     UPDATE users 
@@ -95,7 +116,7 @@ BEGIN
     SELECT * INTO buyer_u FROM users WHERE telegram_id = buyer_id;
     IF NOT FOUND THEN RETURN json_build_object('success', false, 'message', 'Buyer not found'); END IF;
 
-    cost := floor(target_u.current_price * target_u.level * 1.5);
+    cost := floor(target_u.current_price * 1.6);
     IF buyer_u.balance < cost THEN RETURN json_build_object('success', false, 'message', 'Недостаточно средств'); END IF;
 
     -- Deduct from buyer
@@ -104,7 +125,8 @@ BEGIN
     -- Upgrade target
     UPDATE users 
     SET level = level + 1,
-        base_income = floor(base_income * 1.1)
+        base_income = base_income + 1,
+        current_price = floor(current_price * 1.6)
     WHERE telegram_id = target_id;
 
     RETURN json_build_object('success', true, 'new_level', target_u.level + 1);
@@ -129,6 +151,114 @@ BEGIN
     UPDATE users SET owner_id = NULL WHERE telegram_id = slave_id;
 
     RETURN json_build_object('success', true, 'payout', payout);
+END;
+$$ LANGUAGE plpgsql;
+
+-- RPC for listing a slave on market
+CREATE OR REPLACE FUNCTION list_on_market(
+    seller_id BIGINT,
+    slave_id BIGINT,
+    price BIGINT
+) RETURNS JSON AS $$
+DECLARE
+    listing_count INTEGER;
+    cost BIGINT := 0;
+    u RECORD;
+BEGIN
+    -- Check ownership
+    IF NOT EXISTS (SELECT 1 FROM users WHERE telegram_id = slave_id AND owner_id = seller_id) THEN
+        RETURN json_build_object('success', false, 'message', 'Вы не владелец этого раба');
+    END IF;
+
+    SELECT COUNT(*) INTO listing_count FROM market_listings WHERE seller_id = seller_id;
+    
+    IF listing_count = 1 THEN
+        cost := 1000;
+    ELSIF listing_count >= 2 THEN
+        -- Handled by stars in frontend/api for slots 3-20
+        -- But we can check here if they have enough balance if we wanted to allow coins
+        -- For simplicity, let's assume slots 3-20 are checked before calling this
+        NULL;
+    END IF;
+
+    IF cost > 0 THEN
+        SELECT balance INTO u FROM users WHERE telegram_id = seller_id;
+        IF u.balance < cost THEN
+            RETURN json_build_object('success', false, 'message', 'Недостаточно монет для покупки слота');
+        END IF;
+        UPDATE users SET balance = balance - cost WHERE telegram_id = seller_id;
+    END IF;
+
+    INSERT INTO market_listings (seller_id, slave_id, price)
+    VALUES (seller_id, slave_id, price)
+    ON CONFLICT (slave_id) DO UPDATE SET price = EXCLUDED.price;
+
+    UPDATE users SET on_market = TRUE, market_price = price WHERE telegram_id = slave_id;
+
+    RETURN json_build_object('success', true);
+END;
+$$ LANGUAGE plpgsql;
+
+-- RPC for unlisting from market
+CREATE OR REPLACE FUNCTION unlist_from_market(
+    seller_id BIGINT,
+    slave_id BIGINT
+) RETURNS JSON AS $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM market_listings WHERE slave_id = slave_id AND seller_id = seller_id) THEN
+        RETURN json_build_object('success', false, 'message', 'Объявление не найдено');
+    END IF;
+
+    DELETE FROM market_listings WHERE slave_id = slave_id;
+    UPDATE users SET on_market = FALSE, market_price = NULL WHERE telegram_id = slave_id;
+
+    RETURN json_build_object('success', true);
+END;
+$$ LANGUAGE plpgsql;
+
+-- RPC for buying from market
+CREATE OR REPLACE FUNCTION buy_from_market(
+    buyer_id BIGINT,
+    slave_id BIGINT
+) RETURNS JSON AS $$
+DECLARE
+    listing RECORD;
+    buyer_u RECORD;
+    seller_u RECORD;
+    owner_payout BIGINT;
+BEGIN
+    SELECT * INTO listing FROM market_listings WHERE slave_id = slave_id;
+    IF NOT FOUND THEN RETURN json_build_object('success', false, 'message', 'Объявление не найдено'); END IF;
+
+    SELECT * INTO buyer_u FROM users WHERE telegram_id = buyer_id;
+    IF buyer_u.balance < listing.price THEN
+        RETURN json_build_object('success', false, 'message', 'Недостаточно средств');
+    END IF;
+
+    -- Deduct from buyer
+    UPDATE users SET balance = balance - listing.price WHERE telegram_id = buyer_id;
+
+    -- Payout to seller
+    SELECT * INTO seller_u FROM users WHERE telegram_id = listing.seller_id;
+    IF seller_u.no_commission THEN
+        owner_payout := listing.price;
+    ELSE
+        owner_payout := floor(listing.price * 0.95);
+    END IF;
+    UPDATE users SET balance = balance + owner_payout WHERE telegram_id = listing.seller_id;
+
+    -- Change owner and price
+    UPDATE users 
+    SET owner_id = buyer_id, 
+        current_price = floor(current_price * 1.2),
+        on_market = FALSE,
+        market_price = NULL
+    WHERE telegram_id = slave_id;
+
+    -- Remove listing
+    DELETE FROM market_listings WHERE slave_id = slave_id;
+
+    RETURN json_build_object('success', true);
 END;
 $$ LANGUAGE plpgsql;
 
