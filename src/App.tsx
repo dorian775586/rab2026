@@ -106,14 +106,16 @@ export default function App() {
   }, [user?.base_income, user?.slaves_count]);
 
   const copyReferralLink = () => {
-    const link = `https://t.me/${botUsername}?start=${user?.telegram_id}`;
+    const userId = user?.telegram_id || WebApp.initDataUnsafe.user?.id;
+    const link = `https://t.me/${botUsername}?start=${userId}`;
     navigator.clipboard.writeText(link);
     WebApp.showAlert('Ссылка скопирована!');
     WebApp.HapticFeedback.notificationOccurred('success');
   };
 
   const shareReferralLink = () => {
-    const link = `https://t.me/${botUsername}?start=${user?.telegram_id}`;
+    const userId = user?.telegram_id || WebApp.initDataUnsafe.user?.id;
+    const link = `https://t.me/${botUsername}?start=${userId}`;
     const text = 'Стань моим рабом в Crypto Slaves и начни зарабатывать! ⛓️💰';
     WebApp.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`);
   };
@@ -635,7 +637,7 @@ export default function App() {
               <div className="glass-card p-4 mb-4 bg-crypto-gold/5 border-crypto-gold/20">
                 <p className="text-[10px] text-slate-500 font-bold uppercase mb-2">Ваша реферальная ссылка</p>
                 <div className="flex items-center gap-2 bg-black/20 p-2 rounded-lg border border-white/5">
-                  <code className="text-[10px] flex-1 truncate opacity-70">t.me/{botUsername}?start={user?.telegram_id}</code>
+                  <code className="text-[10px] flex-1 truncate opacity-70">t.me/{botUsername}?start={user?.telegram_id || WebApp.initDataUnsafe.user?.id || '...'}</code>
                   <button onClick={copyReferralLink} className="text-crypto-gold p-1"><Plus className="w-3 h-3 rotate-45" /></button>
                 </div>
                 <p className="text-[9px] text-slate-500 mt-2 italic">* Каждый новый раб приносит +1 монету в минуту!</p>
@@ -647,13 +649,14 @@ export default function App() {
                   <div className="grid grid-cols-2 gap-3">
                     {[...Array(20)].map((_, i) => {
                       const listing = myListings[i];
-                      const isLocked = i >= 2; // 1 free, 1 for 1000 (handled in RPC), 3-20 for stars
+                      const isLocked = i >= 2; 
+                      const slotPrice = i === 1 ? '1000 монет' : i > 1 ? `${25 + (i-2)*25} Stars` : 'Бесплатно';
                       
                       return (
                         <div 
                           key={i}
                           onClick={() => !listing && !isLocked && setListingModal({ isOpen: true, slotIndex: i })}
-                          className={`glass-card p-4 h-32 flex flex-col items-center justify-center border-dashed border-2 transition-all ${listing ? 'border-crypto-gold/30 bg-crypto-gold/5' : 'border-white/5 hover:border-white/20 cursor-pointer'}`}
+                          className={`glass-card p-4 h-32 flex flex-col items-center justify-center border-dashed border-2 transition-all ${listing ? 'border-crypto-gold/30 bg-crypto-gold/5' : isLocked ? 'border-white/5 opacity-50' : 'border-white/5 hover:border-white/20 cursor-pointer'}`}
                         >
                           {listing ? (
                             <div className="w-full h-full flex flex-col items-center justify-center text-center">
@@ -667,15 +670,11 @@ export default function App() {
                                 Снять
                               </button>
                             </div>
-                          ) : isLocked ? (
-                            <div className="flex flex-col items-center opacity-30">
-                              <Lock className="w-5 h-5 mb-1" />
-                              <span className="text-[8px] font-black uppercase tracking-widest">{i < 2 ? '1000 монет' : `${25 + (i-2)*25} Stars`}</span>
-                            </div>
                           ) : (
-                            <div className="flex flex-col items-center text-slate-500">
-                              <Plus className="w-6 h-6 mb-1" />
-                              <span className="text-[8px] font-black uppercase tracking-widest">Выставить</span>
+                            <div className="flex flex-col items-center text-center">
+                              {isLocked ? <Lock className="w-5 h-5 mb-1 text-slate-600" /> : <Plus className="w-5 h-5 mb-1 text-crypto-gold" />}
+                              <span className="text-[8px] font-black uppercase tracking-widest mb-1">{isLocked ? 'Заблокировано' : 'Выставить'}</span>
+                              <span className="text-[7px] font-bold text-slate-500 uppercase">{slotPrice}</span>
                             </div>
                           )}
                         </div>
