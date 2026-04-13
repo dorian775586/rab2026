@@ -76,6 +76,7 @@ app.post("/api/sync", validateTelegram, async (req, res) => {
   if (!tgUser) return res.status(400).json({ error: "User not identified" });
 
   const { id, username } = tgUser;
+  const { referrerId } = req.body;
   const initData = req.headers["x-telegram-init-data"] as string;
   const urlParams = new URLSearchParams(initData);
   const startParam = urlParams.get("start_param");
@@ -93,6 +94,8 @@ app.post("/api/sync", validateTelegram, async (req, res) => {
       let inviterId: string | null = null;
       if (startParam && !isNaN(Number(startParam))) {
         inviterId = String(startParam);
+      } else if (referrerId && !isNaN(Number(referrerId))) {
+        inviterId = String(referrerId);
       }
 
       // Проверяем, существует ли пригласитель на самом деле

@@ -115,7 +115,7 @@ export default function App() {
       WebApp.showAlert('Ошибка: ID пользователя не найден. Попробуйте перезапустить бота.');
       return;
     }
-    const link = `https://t.me/${botUsername}?start=${userId}`;
+    const link = `https://t.me/${botUsername}/app?startapp=${userId}`;
     navigator.clipboard.writeText(link);
     WebApp.showAlert('Ссылка скопирована!');
     WebApp.HapticFeedback.notificationOccurred('success');
@@ -127,19 +127,21 @@ export default function App() {
       WebApp.showAlert('Ошибка: ID пользователя не найден. Попробуйте перезапустить бота.');
       return;
     }
-    const link = `https://t.me/${botUsername}?start=${userId}`;
+    const link = `https://t.me/${botUsername}/app?startapp=${userId}`;
     const text = 'Стань моим рабом в Crypto Slaves и начни зарабатывать! ⛓️💰';
     WebApp.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`);
   };
 
   const fetchUser = useCallback(async () => {
     try {
+      const startParam = WebApp.initDataUnsafe.start_param;
       const response = await fetch(API_URL + '/api/sync', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'x-telegram-init-data': WebApp.initData,
         },
+        body: JSON.stringify({ referrerId: startParam })
       });
       const data = await response.json();
       if (response.ok) {
@@ -667,7 +669,7 @@ export default function App() {
               <div className="glass-card p-4 mb-4 bg-crypto-gold/5 border-crypto-gold/20">
                 <p className="text-[10px] text-slate-500 font-bold uppercase mb-2">Ваша реферальная ссылка</p>
                 <div className="flex items-center gap-2 bg-black/20 p-2 rounded-lg border border-white/5">
-                  <code className="text-[10px] flex-1 truncate opacity-70">t.me/{botUsername}?start={user?.telegram_id || WebApp.initDataUnsafe.user?.id || '...'}</code>
+                  <code className="text-[10px] flex-1 truncate opacity-70">t.me/{botUsername}/app?startapp={user?.telegram_id || WebApp.initDataUnsafe.user?.id || '...'}</code>
                   <button onClick={copyReferralLink} className="text-crypto-gold p-1"><Plus className="w-3 h-3 rotate-45" /></button>
                 </div>
                 <p className="text-[9px] text-slate-500 mt-2 italic">* Каждый новый раб приносит +1 монету в минуту!</p>
