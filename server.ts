@@ -236,15 +236,25 @@ app.post("/api/sell", validateTelegram, async (req, res) => {
 app.post("/api/spin", validateTelegram, async (req, res) => {
   const tgUser = (req as any).tgUser;
   const { bet, isFree } = req.body;
+  
+  console.log(`Spin request from ${tgUser.id}: bet=${bet}, isFree=${isFree}`);
+  
   try {
     const { data, error } = await supabase.rpc("spin_roulette", { 
       user_id: String(tgUser.id), 
-      bet: Number(bet), 
-      is_free: isFree 
+      bet: Number(bet || 0), 
+      is_free: !!isFree 
     });
-    if (error) throw error;
+    
+    if (error) {
+      console.error("Spin RPC error:", error);
+      throw error;
+    }
+    
+    console.log(`Spin result for ${tgUser.id}:`, data);
     res.json(data);
   } catch (err: any) {
+    console.error("Spin endpoint error:", err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -257,6 +267,12 @@ app.get("/api/globals", async (req, res) => {
       acc[curr.key] = curr.value_int;
       return acc;
     }, {});
+    
+    if (globals.jackpot_fund === undefined) {
+      await supabase.from("globals").insert({ key: "jackpot_fund", value_int: 10000 });
+      globals.jackpot_fund = 10000;
+    }
+    
     res.json(globals);
   } catch (err: any) {
     res.status(500).json({ error: err.message });

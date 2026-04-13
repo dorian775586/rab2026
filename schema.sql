@@ -280,12 +280,18 @@ DECLARE
 BEGIN
     SELECT * INTO u FROM users WHERE telegram_id = user_id;
     
+    IF NOT FOUND THEN
+        RETURN json_build_object('success', false, 'message', 'Пользователь не найден');
+    END IF;
+
     IF NOT is_free THEN
-        IF u.balance < bet THEN RETURN json_build_object('success', false, 'message', 'Недостаточно средств'); END IF;
+        IF u.balance < bet THEN 
+            RETURN json_build_object('success', false, 'message', 'Недостаточно средств'); 
+        END IF;
         UPDATE users SET balance = balance - bet WHERE telegram_id = user_id;
         UPDATE globals SET value_int = value_int + bet WHERE key = 'jackpot_fund';
     ELSE
-        IF u.last_free_spin > CURRENT_TIMESTAMP - INTERVAL '1 day' THEN
+        IF u.last_free_spin IS NOT NULL AND u.last_free_spin > CURRENT_TIMESTAMP - INTERVAL '1 day' THEN
             RETURN json_build_object('success', false, 'message', 'Бесплатный спин доступен раз в 24 часа');
         END IF;
         UPDATE users SET last_free_spin = CURRENT_TIMESTAMP WHERE telegram_id = user_id;

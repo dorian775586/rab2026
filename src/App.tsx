@@ -85,6 +85,7 @@ export default function App() {
   const [bet, setBet] = useState(100);
   const [isSpinning, setIsSpinning] = useState(false);
   const [spinResult, setSpinResult] = useState<{ type: string, win: number } | null>(null);
+  const [wheelRotation, setWheelRotation] = useState(0);
 
   const [selectedSlave, setSelectedSlave] = useState<MarketUser | null>(null);
   const [viewingProfile, setViewingProfile] = useState<(UserData & { slaves: MarketUser[] }) | null>(null);
@@ -338,6 +339,10 @@ export default function App() {
     if (isSpinning) return;
     setIsSpinning(true);
     setSpinResult(null);
+    
+    // Start initial slow rotation
+    const baseRotation = wheelRotation + 1440; // 4 full turns minimum
+    
     try {
       const response = await fetch(API_URL + '/api/spin', {
         method: 'POST',
@@ -349,22 +354,41 @@ export default function App() {
       });
       const data = await response.json();
       
-      // Simulate wheel spin delay
-      setTimeout(() => {
-        setIsSpinning(false);
-        if (response.ok && data.success) {
+      if (response.ok && data.success) {
+        // Map result type to a segment angle
+        // 0: Jackpot, 1: Empty, 2: x0.5, 3: x2, 4: Empty, 5: x10, 6: Bonus, 7: Empty
+        const typeToSegment: Record<string, number> = {
+          'jackpot': 0,
+          'empty': 1, // We have multiple empty slots
+          'x0.5': 2,
+          'x2': 3,
+          'bonus': 6,
+          'x10': 5
+        };
+        
+        let segment = typeToSegment[data.type] || 1;
+        if (data.type === 'empty') {
+          const emptySegments = [1, 4, 7];
+          segment = emptySegments[Math.floor(Math.random() * emptySegments.length)];
+        }
+        
+        const targetRotation = baseRotation + (360 - (segment * 45));
+        setWheelRotation(targetRotation);
+
+        setTimeout(() => {
+          setIsSpinning(false);
           setSpinResult(data);
           fetchUser();
           fetchGlobals();
           WebApp.HapticFeedback.notificationOccurred(data.win > 0 ? 'success' : 'error');
-        } else {
-          WebApp.showAlert(data.message || 'Ошибка спина');
-        }
-      }, 2000);
-
+        }, 3000);
+      } else {
+        setIsSpinning(false);
+        WebApp.showAlert(data.message || 'Ошибка спина');
+      }
     } catch (err) {
       setIsSpinning(false);
-      WebApp.showAlert('Ошибка сети');
+      WebApp.showAlert('Ошибка сети при спине');
     }
   };
 
@@ -1079,39 +1103,76 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="relative py-4 flex flex-col items-center">
+              <div className="relative py-8 flex flex-col items-center">
                 {/* Indicator */}
-                <div className="absolute top-0 left-1/2 -translate-x-1/2 z-20">
-                  <div className="w-4 h-6 bg-crypto-gold rounded-b-full shadow-lg flex items-center justify-center">
-                    <div className="w-1 h-1 bg-black rounded-full" />
+                <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20">
+                  <div className="w-6 h-8 bg-white rounded-b-full shadow-lg flex items-center justify-center border-2 border-crypto-gold">
+                    <div className="w-1.5 h-1.5 bg-black rounded-full" />
                   </div>
                 </div>
 
-                <motion.div 
-                  animate={isSpinning ? { rotate: 3600 } : { rotate: 0 }}
-                  transition={isSpinning ? { duration: 3, ease: [0.45, 0.05, 0.55, 0.95] } : { duration: 0 }}
-                  className="w-48 h-48 rounded-full border-[10px] border-crypto-gold/30 relative flex items-center justify-center bg-black/20 shadow-[0_0_30px_rgba(251,191,36,0.1)] overflow-hidden"
-                >
-                  {/* Wheel Segments (Visual only) */}
-                  <div className="absolute inset-0 opacity-20">
-                    {[...Array(8)].map((_, i) => (
-                      <div 
-                        key={i} 
-                        className="absolute top-0 left-1/2 w-0.5 h-full bg-crypto-gold origin-bottom"
-                        style={{ transform: `translateX(-50%) rotate(${i * 45}deg)` }}
-                      />
-                    ))}
-                  </div>
-                  <Dices className={`w-12 h-12 text-crypto-gold ${isSpinning ? 'animate-pulse' : ''}`} />
-                </motion.div>
+                <div className="relative w-64 h-64">
+                  <motion.div 
+                    animate={{ rotate: wheelRotation }}
+                    transition={{ duration: 3, ease: [0.15, 0, 0.15, 1] }}
+                    className="w-full h-full rounded-full border-[8px] border-white/10 relative overflow-hidden shadow-[0_0_50px_rgba(251,191,36,0.2)]"
+                  >
+                    <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
+                      {/* 8 segments of 45 degrees */}
+                      {[
+                        { color: '#FFD700', label: 'JACKPOT' }, // 0
+                        { color: '#475569', label: 'EMPTY' },   // 1
+                        { color: '#3B82F6', label: 'x0.5' },    // 2
+                        { color: '#10B981', label: 'x2' },      // 3
+                        { color: '#475569', label: 'EMPTY' },   // 4
+                        { color: '#F59E0B', label: 'x10' },     // 5
+                        { color: '#8B5CF6', label: 'BONUS' },   // 6
+                        { color: '#475569', label: 'EMPTY' },   // 7
+                      ].map((seg, i) => {
+                        const startAngle = i * 45;
+                        const endAngle = (i + 1) * 45;
+                        const x1 = 50 + 50 * Math.cos((startAngle * Math.PI) / 180);
+                        const y1 = 50 + 50 * Math.sin((startAngle * Math.PI) / 180);
+                        const x2 = 50 + 50 * Math.cos((endAngle * Math.PI) / 180);
+                        const y2 = 50 + 50 * Math.sin((endAngle * Math.PI) / 180);
+                        
+                        return (
+                          <g key={i}>
+                            <path 
+                              d={`M 50 50 L ${x1} ${y1} A 50 50 0 0 1 ${x2} ${y2} Z`} 
+                              fill={seg.color}
+                              className="stroke-black/20 stroke-1"
+                            />
+                            <text 
+                              x="75" y="50" 
+                              transform={`rotate(${startAngle + 22.5}, 50, 50)`}
+                              fill="white" 
+                              fontSize="4" 
+                              fontWeight="900" 
+                              textAnchor="middle"
+                              className="select-none"
+                            >
+                              {seg.label}
+                            </text>
+                          </g>
+                        );
+                      })}
+                    </svg>
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="w-12 h-12 rounded-full bg-black/40 backdrop-blur-md border-2 border-white/20 flex items-center justify-center shadow-inner">
+                        <Dices className={`w-6 h-6 text-white ${isSpinning ? 'animate-bounce' : ''}`} />
+                      </div>
+                    </div>
+                  </motion.div>
+                </div>
 
                 <motion.button 
                   onClick={() => handleSpin(false)}
                   disabled={isSpinning || (user?.balance || 0) < bet}
-                  whileTap={{ scale: 0.9 }}
-                  className={`mt-4 gold-button px-8 py-3 rounded-xl text-base font-black shadow-[0_10px_20px_rgba(251,191,36,0.15)] ${isSpinning ? 'opacity-50 cursor-not-allowed' : 'animate-pulse-slow'}`}
+                  whileTap={{ scale: 0.95 }}
+                  className={`mt-8 gold-button px-12 py-4 rounded-2xl text-lg font-black shadow-[0_15px_30px_rgba(251,191,36,0.3)] ${isSpinning ? 'opacity-50 grayscale' : 'animate-pulse-slow'}`}
                 >
-                  SPIN
+                  {isSpinning ? 'УДАЧИ...' : 'ИГРАТЬ'}
                 </motion.button>
               </div>
 
@@ -1144,12 +1205,12 @@ export default function App() {
               <div className="w-full glass-card p-4 space-y-3">
                 <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Таблица выплат</h3>
                 <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-xs font-bold">
-                  <div className="flex justify-between border-b border-white/5 pb-1"><span>ПУСТО</span><span className="text-slate-500">45%</span></div>
-                  <div className="flex justify-between border-b border-white/5 pb-1"><span>x0.5</span><span className="text-slate-500">25%</span></div>
-                  <div className="flex justify-between border-b border-white/5 pb-1"><span>x2</span><span className="text-crypto-gold">15%</span></div>
-                  <div className="flex justify-between border-b border-white/5 pb-1"><span>БОНУС x2</span><span className="text-crypto-gold">9%</span></div>
-                  <div className="flex justify-between border-b border-white/5 pb-1"><span>x10</span><span className="text-crypto-gold">5%</span></div>
-                  <div className="flex justify-between border-b border-white/5 pb-1"><span>JACKPOT</span><span className="text-crypto-emerald">1%</span></div>
+                  <div className="flex justify-between border-b border-white/5 pb-1"><span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-[#475569]" /> ПУСТО</span><span className="text-slate-500">45%</span></div>
+                  <div className="flex justify-between border-b border-white/5 pb-1"><span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-[#3B82F6]" /> x0.5</span><span className="text-slate-500">25%</span></div>
+                  <div className="flex justify-between border-b border-white/5 pb-1"><span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-[#10B981]" /> x2</span><span className="text-crypto-gold">15%</span></div>
+                  <div className="flex justify-between border-b border-white/5 pb-1"><span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-[#8B5CF6]" /> БОНУС x2</span><span className="text-crypto-gold">9%</span></div>
+                  <div className="flex justify-between border-b border-white/5 pb-1"><span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-[#F59E0B]" /> x10</span><span className="text-crypto-gold">5%</span></div>
+                  <div className="flex justify-between border-b border-white/5 pb-1"><span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-[#FFD700]" /> JACKPOT</span><span className="text-crypto-emerald">1%</span></div>
                 </div>
               </div>
             </motion.div>
