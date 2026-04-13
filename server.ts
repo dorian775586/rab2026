@@ -117,7 +117,7 @@ app.post("/api/sync", validateTelegram, async (req, res) => {
           telegram_id: String(id), 
           username: username || `User_${id}`,
           owner_id: inviterId,
-          balance: 1000 // Гарантируем начальный баланс
+          balance: 0 // Убрали начальный баланс
         }])
         .select()
         .single();
