@@ -643,7 +643,7 @@ export default function App() {
                     <TrendingUp className="w-5 h-5 text-crypto-emerald" />
                   </div>
                   <span className="text-[10px] text-slate-500 font-bold uppercase mb-1">Доход/мин</span>
-                  <span className="text-2xl font-black text-crypto-emerald">+{user ? (user.base_income + (user.slaves_count || 0)) : 0}</span>
+                  <span className="text-2xl font-black text-crypto-emerald">+{user?.total_income || 0}</span>
                 </div>
               </div>
             </motion.div>
@@ -681,7 +681,12 @@ export default function App() {
                 <p className="text-[10px] text-slate-500 font-bold uppercase mb-2">Ваша реферальная ссылка</p>
                 <div className="flex items-center gap-2 bg-black/20 p-2 rounded-lg border border-white/5">
                   <code className="text-[10px] flex-1 truncate opacity-70">t.me/{botUsername}/app?startapp={user?.telegram_id || WebApp.initDataUnsafe.user?.id || '...'}</code>
-                  <button onClick={copyReferralLink} className="text-crypto-gold p-1"><Plus className="w-3 h-3 rotate-45" /></button>
+                  <button 
+                    onClick={copyReferralLink} 
+                    className="bg-crypto-gold/10 text-crypto-gold px-3 py-1 rounded-md text-[10px] font-black uppercase tracking-wider hover:bg-crypto-gold/20 transition-colors"
+                  >
+                    Копировать
+                  </button>
                 </div>
                 <p className="text-[9px] text-slate-500 mt-2 italic">* Каждый новый раб приносит +1 монету в минуту!</p>
               </div>
@@ -820,7 +825,7 @@ export default function App() {
                         <div>
                           <label className="text-[10px] font-black uppercase text-slate-500 mb-2 block">Выберите раба</label>
                           <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto pr-2 no-scrollbar">
-                            {slaves.map(slave => (
+                            {slaves.filter(s => !s.on_market).map(slave => (
                               <button
                                 key={slave.telegram_id}
                                 onClick={() => setListingSlaveId(slave.telegram_id)}
@@ -830,6 +835,9 @@ export default function App() {
                                 <div className="text-[9px] opacity-70">Стоимость: {slave.current_price.toLocaleString()}</div>
                               </button>
                             ))}
+                            {slaves.filter(s => !s.on_market).length === 0 && (
+                              <div className="text-center py-4 text-slate-500 text-xs">Нет доступных рабов для продажи</div>
+                            )}
                           </div>
                         </div>
 

@@ -171,16 +171,18 @@ app.post("/api/sync", validateTelegram, async (req, res) => {
     // Get slaves count and total income for the response
     const { data: allSlaves } = await supabase
       .from("users")
-      .select("base_income")
+      .select("base_income, on_market")
       .eq("owner_id", String(id));
     
     const slavesCount = allSlaves?.length || 0;
-    const totalSlavesIncome = (allSlaves || []).reduce((acc, s) => acc + (s.base_income || 0), 0);
+    const activeSlavesIncome = (allSlaves || [])
+      .filter(s => !s.on_market)
+      .reduce((acc, s) => acc + (s.base_income || 0), 0);
 
     res.json({ 
       ...user, 
       slaves_count: slavesCount,
-      total_income: user.base_income + totalSlavesIncome
+      total_income: user.base_income + activeSlavesIncome
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -233,20 +235,13 @@ app.post("/api/sell", validateTelegram, async (req, res) => {
 
 app.post("/api/spin", validateTelegram, async (req, res) => {
   const tgUser = (req as any).tgUser;
-  let { bet, isFree } = req.body;
+  const { bet, isFree } = req.body;
   try {
-    if (isFree) {
-      const { data: user } = await supabase.from("users").select("last_free_spin").eq("telegram_id", String(tgUser.id)).single();
-      const lastFree = user?.last_free_spin ? new Date(user.last_free_spin) : new Date(0);
-      const now = new Date();
-      if (now.getTime() - lastFree.getTime() < 24 * 60 * 60 * 1000) {
-        return res.status(400).json({ success: false, message: "Бесплатный спин доступен раз в 24 часа" });
-      }
-      bet = 100; // Free spin is always for 100 bet
-      await supabase.from("users").update({ last_free_spin: now.toISOString() }).eq("telegram_id", String(tgUser.id));
-    }
-
-    const { data, error } = await supabase.rpc("spin_roulette", { user_id: String(tgUser.id), bet, is_free: isFree });
+    const { data, error } = await supabase.rpc("spin_roulette", { 
+      user_id: String(tgUser.id), 
+      bet: Number(bet), 
+      is_free: isFree 
+    });
     if (error) throw error;
     res.json(data);
   } catch (err: any) {

@@ -172,9 +172,9 @@ BEGIN
         RETURN json_build_object('success', false, 'message', 'Вы не владелец этого раба');
     END IF;
 
-    SELECT COUNT(*), (SELECT market_slots_unlocked FROM users WHERE telegram_id = seller_id) 
+    SELECT COUNT(*), (SELECT market_slots_unlocked FROM users WHERE telegram_id = list_on_market.seller_id) 
     INTO listing_count, slots_unlocked 
-    FROM market_listings WHERE seller_id = seller_id;
+    FROM market_listings WHERE seller_id = list_on_market.seller_id;
     
     -- If trying to use a locked slot
     IF listing_count >= slots_unlocked THEN
