@@ -2,10 +2,10 @@
 CREATE TABLE IF NOT EXISTS users (
     telegram_id BIGINT PRIMARY KEY,
     username TEXT,
-    balance BIGINT DEFAULT 1000,
+    balance BIGINT DEFAULT 0,
     owner_id BIGINT REFERENCES users(telegram_id),
     current_price BIGINT DEFAULT 50,
-    base_income BIGINT DEFAULT 1,
+    base_income BIGINT DEFAULT 0,
     level INTEGER DEFAULT 1, -- Max 20
     ghost_until TIMESTAMP WITH TIME ZONE,
     no_commission BOOLEAN DEFAULT FALSE,
@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS users (
     market_slots_unlocked INTEGER DEFAULT 1,
     last_collect_time TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     last_free_spin TIMESTAMP WITH TIME ZONE,
+    photo_url TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -126,7 +127,7 @@ BEGIN
     -- Upgrade target
     UPDATE users 
     SET level = level + 1,
-        base_income = base_income + 1,
+        base_income = floor(base_income * 1.5) + 2,
         current_price = floor(current_price * 1.6)
     WHERE telegram_id = target_id;
 

@@ -46,6 +46,8 @@ interface UserData {
   last_collect_time: string;
   last_free_spin: string | null;
   slaves_count: number;
+  total_income: number;
+  photo_url: string | null;
 }
 
 interface MarketUser {
@@ -55,6 +57,7 @@ interface MarketUser {
   base_income: number;
   level?: number;
   on_market?: boolean;
+  photo_url?: string | null;
 }
 
 interface LeaderboardUser {
@@ -70,6 +73,7 @@ export default function App() {
   const API_URL = 'https://rab2026.onrender.com';
   const [activeTab, setActiveTab] = useState<Tab>('profile');
   const [user, setUser] = useState<UserData | null>(null);
+  const [displayBalance, setDisplayBalance] = useState(0);
   const [slaves, setSlaves] = useState<MarketUser[]>([]);
   const [market, setMarket] = useState<MarketUser[]>([]);
   const [globals, setGlobals] = useState<{ jackpot_fund: number }>({ jackpot_fund: 10000 });
@@ -95,20 +99,23 @@ export default function App() {
   // Real-time balance update
   useEffect(() => {
     if (!user) return;
+    setDisplayBalance(user.balance);
+  }, [user?.balance]);
+
+  useEffect(() => {
+    if (!user || !user.total_income || user.total_income <= 0) return;
     
     const interval = setInterval(() => {
-      setUser(prev => {
-        if (!prev) return null;
-        const perSecondIncome = (prev.base_income + (prev.slaves_count || 0)) / 60;
-        return {
-          ...prev,
-          balance: prev.balance + perSecondIncome
-        };
-      });
-    }, 1000);
+      const now = Date.now();
+      const lastCollect = new Date(user.last_collect_time).getTime();
+      const elapsedMs = now - lastCollect;
+      const elapsedMins = elapsedMs / 60000;
+      const currentBalance = user.balance + (elapsedMins * user.total_income);
+      setDisplayBalance(currentBalance);
+    }, 100);
 
     return () => clearInterval(interval);
-  }, [user?.base_income, user?.slaves_count]);
+  }, [user?.balance, user?.total_income, user?.last_collect_time, user?.telegram_id]);
 
   const copyReferralLink = () => {
     const userId = user?.telegram_id || WebApp.initDataUnsafe.user?.id;
@@ -263,8 +270,8 @@ export default function App() {
       });
       const data = await response.json();
       if (response.ok && data.success) {
+        if (data.user) setUser(data.user);
         WebApp.HapticFeedback.notificationOccurred('success');
-        fetchUser();
       } else {
         WebApp.showAlert(data.message || 'Ошибка при покупке');
       }
@@ -288,8 +295,8 @@ export default function App() {
       });
       const data = await response.json();
       if (response.ok && data.success) {
+        if (data.user) setUser(data.user);
         WebApp.HapticFeedback.notificationOccurred('success');
-        fetchUser();
         fetchSlaves();
       } else {
         WebApp.showAlert(data.message || 'Ошибка улучшения');
@@ -314,8 +321,8 @@ export default function App() {
       });
       const data = await response.json();
       if (response.ok && data.success) {
+        if (data.user) setUser(data.user);
         WebApp.HapticFeedback.notificationOccurred('success');
-        fetchUser();
         fetchSlaves();
       } else {
         WebApp.showAlert(data.message || 'Ошибка продажи');
@@ -502,9 +509,12 @@ export default function App() {
         method: 'POST',
         headers: { 'x-telegram-init-data': WebApp.initData },
       });
-      if (response.ok) {
+      const data = await response.json();
+      if (response.ok && data.success) {
+        if (data.user) setUser(data.user);
         WebApp.showAlert('Слот успешно разблокирован!');
-        fetchUser();
+      } else {
+        WebApp.showAlert(data.message || 'Ошибка покупки слота');
       }
     } catch (err) {
       WebApp.showAlert('Ошибка покупки слота');
@@ -538,7 +548,7 @@ export default function App() {
           <div className="flex items-center gap-3 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 px-4 py-2 rounded-2xl">
             <div className="flex flex-col items-end">
               <span className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase leading-none mb-1">Баланс</span>
-              <span className="text-base font-black text-crypto-gold leading-none">{user?.balance.toLocaleString()}</span>
+              <span className="text-base font-black text-crypto-gold leading-none">{Math.floor(displayBalance).toLocaleString()}</span>
             </div>
             <Coins className="w-5 h-5 text-crypto-gold" />
           </div>
@@ -678,6 +688,62 @@ export default function App() {
               
               <div className="space-y-6">
                 <div className="space-y-4">
+                  <h3 className="text-sm font-black uppercase tracking-widest text-slate-500">Мои Рабы</h3>
+                  {slaves.length === 0 ? (
+                    <div className="glass-card py-16 flex flex-col items-center justify-center text-slate-400 dark:text-slate-500">
+                      <Lock className="w-12 h-12 mb-4 opacity-10" />
+                      <p className="text-sm font-medium">У вас пока нет рабов</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {/* Slaves List Header */}
+                      <div className="px-4 flex text-[10px] font-black uppercase text-slate-500 tracking-widest">
+                        <div className="flex-1">Игрок</div>
+                        <div className="w-24 text-center">Доход</div>
+                        <div className="w-24 text-right">Выкуп</div>
+                      </div>
+
+                      {slaves.map(slave => (
+                        <div 
+                          key={slave.telegram_id} 
+                          onClick={() => setSelectedSlave(slave)}
+                          className="glass-card p-4 flex justify-between items-center group active:scale-[0.98] transition-all cursor-pointer"
+                        >
+                          <div className="flex items-center gap-3 flex-1 min-w-0">
+                            <div className="w-10 h-10 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center border border-black/10 dark:border-white/10 shrink-0 overflow-hidden">
+                              {slave.photo_url ? (
+                                <img src={slave.photo_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                              ) : (
+                                <User className="w-5 h-5 text-slate-400" />
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="font-bold flex items-center gap-2 truncate">
+                                {slave.username}
+                                {slave.on_market && (
+                                  <span className="text-[8px] bg-crypto-gold/20 text-crypto-gold px-1.5 py-0.5 rounded font-black uppercase shrink-0">На рынке</span>
+                                )}
+                              </div>
+                              <div className="text-[9px] text-slate-500 truncate">ID: {slave.telegram_id}</div>
+                            </div>
+                          </div>
+
+                          <div className="w-24 text-center">
+                            <div className="text-xs font-black text-crypto-emerald">+{slave.base_income}</div>
+                            <div className="text-[8px] text-slate-500 font-bold uppercase leading-none">/ мин</div>
+                          </div>
+
+                          <div className="w-24 text-right">
+                            <div className="text-sm font-black">{slave.current_price.toLocaleString()}</div>
+                            <div className="text-[8px] text-slate-500 font-bold uppercase leading-none">Монет</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-4">
                   <h3 className="text-sm font-black uppercase tracking-widest text-slate-500">Мои объявления</h3>
                   <div className="grid grid-cols-2 gap-3">
                     {[...Array(20)].map((_, i) => {
@@ -731,58 +797,6 @@ export default function App() {
                       );
                     })}
                   </div>
-                </div>
-
-                <div className="space-y-4">
-                  <h3 className="text-sm font-black uppercase tracking-widest text-slate-500">Мои Рабы</h3>
-                  {slaves.length === 0 ? (
-                    <div className="glass-card py-16 flex flex-col items-center justify-center text-slate-400 dark:text-slate-500">
-                      <Lock className="w-12 h-12 mb-4 opacity-10" />
-                      <p className="text-sm font-medium">У вас пока нет рабов</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {/* Slaves List Header */}
-                      <div className="px-4 flex text-[10px] font-black uppercase text-slate-500 tracking-widest">
-                        <div className="flex-1">Игрок</div>
-                        <div className="w-24 text-center">Доход</div>
-                        <div className="w-24 text-right">Выкуп</div>
-                      </div>
-
-                      {slaves.map(slave => (
-                        <div 
-                          key={slave.telegram_id} 
-                          onClick={() => setSelectedSlave(slave)}
-                          className="glass-card p-4 flex justify-between items-center group active:scale-[0.98] transition-all cursor-pointer"
-                        >
-                          <div className="flex items-center gap-3 flex-1 min-w-0">
-                            <div className="w-10 h-10 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center border border-black/10 dark:border-white/10 shrink-0">
-                              <User className="w-5 h-5 text-slate-400" />
-                            </div>
-                            <div className="min-w-0">
-                              <div className="font-bold flex items-center gap-2 truncate">
-                                {slave.username}
-                                {slave.on_market && (
-                                  <span className="text-[8px] bg-crypto-gold/20 text-crypto-gold px-1.5 py-0.5 rounded font-black uppercase shrink-0">На рынке</span>
-                                )}
-                              </div>
-                              <div className="text-[9px] text-slate-500 truncate">ID: {slave.telegram_id}</div>
-                            </div>
-                          </div>
-
-                          <div className="w-24 text-center">
-                            <div className="text-xs font-black text-crypto-emerald">+{slave.base_income}</div>
-                            <div className="text-[8px] text-slate-500 font-bold uppercase leading-none">/ мин</div>
-                          </div>
-
-                          <div className="w-24 text-right">
-                            <div className="text-sm font-black">{slave.current_price.toLocaleString()}</div>
-                            <div className="text-[8px] text-slate-500 font-bold uppercase leading-none">Монет</div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
                 </div>
               </div>
 
@@ -1295,7 +1309,7 @@ export default function App() {
                     </div>
 
                     <div className="text-right">
-                      <div className="font-black text-crypto-gold">{player.balance.toLocaleString()}</div>
+                      <div className="font-black text-crypto-gold">{Math.floor(player.balance).toLocaleString()}</div>
                       <div className="text-[8px] text-slate-500 font-black uppercase tracking-widest">Баланс</div>
                     </div>
                   </div>

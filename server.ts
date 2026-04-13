@@ -75,7 +75,7 @@ app.post("/api/sync", validateTelegram, async (req, res) => {
   const tgUser = (req as any).tgUser;
   if (!tgUser) return res.status(400).json({ error: "User not identified" });
 
-  const { id, username } = tgUser;
+  const { id, username, photo_url } = tgUser;
   const { referrerId } = req.body;
   const initData = req.headers["x-telegram-init-data"] as string;
   const urlParams = new URLSearchParams(initData);
@@ -116,6 +116,7 @@ app.post("/api/sync", validateTelegram, async (req, res) => {
         .insert([{ 
           telegram_id: String(id), 
           username: username || `User_${id}`,
+          photo_url: photo_url || null,
           owner_id: inviterId,
           balance: 0,
           base_income: 0
@@ -141,14 +142,18 @@ app.post("/api/sync", validateTelegram, async (req, res) => {
     const diffMins = Math.floor(diffMs / 60000);
 
     if (diffMins > 0) {
-      // Get slaves count for additional income (only those NOT on market)
-      const { count: activeSlavesCount } = await supabase
+      // Get sum of base_income from all active slaves
+      const { data: slavesData, error: slavesError } = await supabase
         .from("users")
-        .select("*", { count: 'exact', head: true })
+        .select("base_income")
         .eq("owner_id", String(id))
         .eq("on_market", false);
 
-      const income = diffMins * (user.base_income + (activeSlavesCount || 0));
+      if (slavesError) throw slavesError;
+
+      const slavesIncome = (slavesData || []).reduce((acc, s) => acc + (s.base_income || 0), 0);
+      const income = diffMins * (user.base_income + slavesIncome);
+      
       const { data: updatedUser, error: updateError } = await supabase
         .from("users")
         .update({ 
@@ -163,13 +168,20 @@ app.post("/api/sync", validateTelegram, async (req, res) => {
       user = updatedUser;
     }
 
-    // Get slaves count for the response
-    const { count: slavesCount } = await supabase
+    // Get slaves count and total income for the response
+    const { data: allSlaves } = await supabase
       .from("users")
-      .select("*", { count: 'exact', head: true })
+      .select("base_income")
       .eq("owner_id", String(id));
+    
+    const slavesCount = allSlaves?.length || 0;
+    const totalSlavesIncome = (allSlaves || []).reduce((acc, s) => acc + (s.base_income || 0), 0);
 
-    res.json({ ...user, slaves_count: slavesCount || 0 });
+    res.json({ 
+      ...user, 
+      slaves_count: slavesCount,
+      total_income: user.base_income + totalSlavesIncome
+    });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -185,7 +197,15 @@ app.post("/api/upgrade", validateTelegram, async (req, res) => {
       target_id: String(targetId || tgUser.id) 
     });
     if (error) throw error;
-    res.json(data);
+    
+    // Fetch updated user to return to frontend
+    const { data: updatedUser } = await supabase
+      .from("users")
+      .select("*, owner:owner_id(username)")
+      .eq("telegram_id", String(tgUser.id))
+      .single();
+
+    res.json({ ...data, user: updatedUser });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -197,7 +217,15 @@ app.post("/api/sell", validateTelegram, async (req, res) => {
   try {
     const { data, error } = await supabase.rpc("sell_slave", { owner_id: String(tgUser.id), slave_id: String(slaveId) });
     if (error) throw error;
-    res.json(data);
+    
+    // Fetch updated user
+    const { data: updatedUser } = await supabase
+      .from("users")
+      .select("*, owner:owner_id(username)")
+      .eq("telegram_id", String(tgUser.id))
+      .single();
+      
+    res.json({ ...data, user: updatedUser });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -312,7 +340,13 @@ app.post("/api/buy", validateTelegram, async (req, res) => {
     if (error) throw error;
     
     if (data.success) {
-      res.json(data);
+      // Fetch updated user
+      const { data: updatedUser } = await supabase
+        .from("users")
+        .select("*, owner:owner_id(username)")
+        .eq("telegram_id", String(tgUser.id))
+        .single();
+      res.json({ ...data, user: updatedUser });
     } else {
       res.status(400).json(data);
     }
@@ -446,7 +480,7 @@ app.post("/api/buy-slot", validateTelegram, async (req, res) => {
   try {
     const { data: user, error: fetchError } = await supabase
       .from("users")
-      .select("market_slots_unlocked")
+      .select("market_slots_unlocked, balance")
       .eq("telegram_id", String(tgUser.id))
       .single();
     
@@ -454,14 +488,28 @@ app.post("/api/buy-slot", validateTelegram, async (req, res) => {
     if (user.market_slots_unlocked >= 20) {
       return res.status(400).json({ success: false, message: "Максимальное количество слотов достигнуто" });
     }
+    if (user.balance < 1000) {
+      return res.status(400).json({ success: false, message: "Недостаточно монет (нужно 1000)" });
+    }
 
     const { error: updateError } = await supabase
       .from("users")
-      .update({ market_slots_unlocked: user.market_slots_unlocked + 1 })
+      .update({ 
+        market_slots_unlocked: user.market_slots_unlocked + 1,
+        balance: user.balance - 1000
+      })
       .eq("telegram_id", String(tgUser.id));
     
     if (updateError) throw updateError;
-    res.json({ success: true, market_slots_unlocked: user.market_slots_unlocked + 1 });
+
+    // Fetch updated user
+    const { data: updatedUser } = await supabase
+      .from("users")
+      .select("*, owner:owner_id(username)")
+      .eq("telegram_id", String(tgUser.id))
+      .single();
+
+    res.json({ success: true, user: updatedUser });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
