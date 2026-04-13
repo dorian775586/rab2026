@@ -266,68 +266,72 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- RPC for roulette spin
-CREATE OR REPLACE FUNCTION spin_roulette(
-    user_id BIGINT,
-    bet BIGINT,
-    is_free BOOLEAN
-) RETURNS JSON AS $$
+CREATE OR REPLACE FUNCTION spin_roulette(user_id_param BIGINT, bet_param BIGINT, is_free BOOLEAN)
+RETURNS JSON AS $$
 DECLARE
-    u RECORD;
-    rand FLOAT;
+    user_balance BIGINT;
+    jackpot_current BIGINT;
+    rand_val INT;
     result_type TEXT;
-    win_amount BIGINT := 0;
-    jackpot BIGINT;
+    win_amount BIGINT;
+    actual_bet BIGINT;
 BEGIN
-    SELECT * INTO u FROM users WHERE telegram_id = user_id;
-    
-    IF NOT FOUND THEN
-        RETURN json_build_object('success', false, 'message', 'Пользователь не найден');
-    END IF;
-
-    IF NOT is_free THEN
-        IF u.balance < bet THEN 
-            RETURN json_build_object('success', false, 'message', 'Недостаточно средств'); 
-        END IF;
-        UPDATE users SET balance = balance - bet WHERE telegram_id = user_id;
-        UPDATE globals SET value_int = value_int + bet WHERE key = 'jackpot_fund';
+    -- 1. Определяем эффективную ставку
+    IF is_free THEN
+        actual_bet := 100; -- Для фри-спина считаем выигрыш от базы в 100 монет
     ELSE
-        IF u.last_free_spin IS NOT NULL AND u.last_free_spin > CURRENT_TIMESTAMP - INTERVAL '1 day' THEN
-            RETURN json_build_object('success', false, 'message', 'Бесплатный спин доступен раз в 24 часа');
-        END IF;
-        UPDATE users SET last_free_spin = CURRENT_TIMESTAMP WHERE telegram_id = user_id;
+        actual_bet := bet_param;
     END IF;
 
-    SELECT value_int INTO jackpot FROM globals WHERE key = 'jackpot_fund';
-    rand := random();
+    -- 2. Берем текущий джекпот
+    SELECT COALESCE((value->>0)::bigint, value_int) INTO jackpot_current FROM globals WHERE key = 'jackpot_fund';
+    
+    -- 3. Проверяем баланс и кулдаун
+    SELECT balance INTO user_balance FROM users WHERE telegram_id = user_id_param;
+    
+    IF is_free THEN
+        -- Проверка кулдауна для бесплатного спина
+        IF EXISTS (SELECT 1 FROM users WHERE telegram_id = user_id_param AND last_free_spin > NOW() - INTERVAL '1 day') THEN
+            RETURN json_build_object('error', 'Бесплатный спин доступен раз в 24 часа');
+        END IF;
+    ELSE
+        -- Проверка баланса для платного спина
+        IF user_balance < actual_bet THEN
+            RETURN json_build_object('error', 'Недостаточно средств');
+        END IF;
+    END IF;
 
-    IF rand < 0.45 THEN -- ПУСТО
-        result_type := 'empty';
-    ELSIF rand < 0.70 THEN -- x0.5
-        result_type := 'x0.5';
-        win_amount := floor(bet * 0.5);
-    ELSIF rand < 0.85 THEN -- x2
-        result_type := 'x2';
-        win_amount := bet * 2;
-    ELSIF rand < 0.94 THEN -- BONUS INCOME x2 (Simplified as instant large win for now)
-        result_type := 'bonus';
-        win_amount := u.base_income * 60 * 24; -- 24h worth of income
-    ELSIF rand < 0.99 THEN -- x10
-        result_type := 'x10';
-        win_amount := bet * 10;
-    ELSE -- JACKPOT
+    -- 4. Логика шансов
+    rand_val := floor(random() * 100);
+    IF rand_val < 1 THEN -- 1% Джекпот
         result_type := 'jackpot';
-        win_amount := jackpot;
-        UPDATE globals SET value_int = 10000 WHERE key = 'jackpot_fund';
-    END IF;
-
-    IF win_amount > 0 THEN
-        UPDATE users SET balance = balance + win_amount WHERE telegram_id = user_id;
-        IF result_type != 'jackpot' THEN
-            UPDATE globals SET value_int = value_int - win_amount WHERE key = 'jackpot_fund';
+        win_amount := jackpot_current;
+        UPDATE globals SET value = '1000'::jsonb, value_int = 1000 WHERE key = 'jackpot_fund';
+    ELSIF rand_val < 15 THEN -- 14% x2
+        result_type := 'x2';
+        win_amount := actual_bet * 2;
+    ELSIF rand_val < 30 THEN -- 15% x0.5 (возврат половины)
+        result_type := 'x0.5';
+        win_amount := floor(actual_bet * 0.5);
+    ELSE -- Проигрыш
+        result_type := 'empty';
+        win_amount := 0;
+        IF NOT is_free THEN
+            -- Добавляем 10% от ставки в джекпот при проигрыше
+            UPDATE globals SET 
+                value = (jackpot_current + floor(actual_bet * 0.1))::text::jsonb,
+                value_int = jackpot_current + floor(actual_bet * 0.1)
+            WHERE key = 'jackpot_fund';
         END IF;
     END IF;
 
-    RETURN json_build_object('success', true, 'type', result_type, 'win', win_amount);
+    -- 5. Обновляем пользователя
+    UPDATE users 
+    SET balance = balance - (CASE WHEN is_free THEN 0 ELSE actual_bet END) + win_amount,
+        last_free_spin = (CASE WHEN is_free THEN NOW() ELSE last_free_spin END)
+    WHERE telegram_id = user_id_param;
+
+    RETURN json_build_object('result', result_type, 'win', win_amount);
 END;
 $$ LANGUAGE plpgsql;
 

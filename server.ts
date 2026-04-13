@@ -241,8 +241,8 @@ app.post("/api/spin", validateTelegram, async (req, res) => {
   
   try {
     const { data, error } = await supabase.rpc("spin_roulette", { 
-      user_id: String(tgUser.id), 
-      bet: Number(bet || 0), 
+      user_id_param: String(tgUser.id), 
+      bet_param: Number(bet || 0),
       is_free: !!isFree 
     });
     
@@ -251,8 +251,19 @@ app.post("/api/spin", validateTelegram, async (req, res) => {
       throw error;
     }
     
-    console.log(`Spin result for ${tgUser.id}:`, data);
-    res.json(data);
+    if (data && data.error) {
+      return res.status(400).json({ success: false, message: data.error });
+    }
+
+    // Normalize response for frontend
+    const result = {
+      success: true,
+      type: data.result ? data.result.toLowerCase() : 'empty',
+      win: data.win || 0
+    };
+    
+    console.log(`Spin result for ${tgUser.id}:`, result);
+    res.json(result);
   } catch (err: any) {
     console.error("Spin endpoint error:", err);
     res.status(500).json({ error: err.message });
@@ -264,7 +275,13 @@ app.get("/api/globals", async (req, res) => {
     const { data, error } = await supabase.from("globals").select("*");
     if (error) throw error;
     const globals = data.reduce((acc: any, curr: any) => {
-      acc[curr.key] = curr.value_int;
+      // Prefer JSONB 'value' if it exists and is not null, otherwise use 'value_int'
+      if (curr.value !== null && curr.value !== undefined) {
+        // If it's an array or object, try to get the first value or the value itself
+        acc[curr.key] = typeof curr.value === 'object' ? (Array.isArray(curr.value) ? curr.value[0] : curr.value) : curr.value;
+      } else {
+        acc[curr.key] = curr.value_int;
+      }
       return acc;
     }, {});
     
