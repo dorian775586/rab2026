@@ -485,7 +485,32 @@ app.get("/api/slaves", validateTelegram, async (req, res) => {
 app.get("/api/leaderboard", validateTelegram, async (req, res) => {
   try {
     const { data, error } = await supabase.rpc("get_leaderboard");
-    if (error) throw error;
+    if (error || !data || data.length === 0) {
+      // Fallback to manual query if RPC fails or returns empty
+      const { data: manualData, error: manualError } = await supabase
+        .from("users")
+        .select("telegram_id, username, balance")
+        .order("balance", { ascending: false })
+        .limit(100);
+      
+      if (manualError) throw manualError;
+      
+      // Add slaves count manually
+      const leaderboardWithSlaves = await Promise.all((manualData || []).map(async (u: any) => {
+        const { count } = await supabase
+          .from("users")
+          .select("*", { count: 'exact', head: true })
+          .eq("owner_id", u.telegram_id);
+        return { 
+          telegram_id: u.telegram_id,
+          username: u.username,
+          balance: u.balance,
+          slaves_count: count || 0 
+        };
+      }));
+      
+      return res.json(leaderboardWithSlaves);
+    }
     res.json(data);
   } catch (err: any) {
     res.status(500).json({ error: err.message });

@@ -693,8 +693,15 @@ export default function App() {
                             if (isUnlocked) {
                               setListingModal({ isOpen: true, slotIndex: i });
                             } else if (i === 1) {
-                              // 2nd slot can be auto-bought via listing or we can show a prompt
-                              setListingModal({ isOpen: true, slotIndex: i });
+                              // Prompt to unlock 2nd slot
+                              WebApp.showConfirm(
+                                `Разблокировать 2-й слот за 1,000 монет?`,
+                                (confirmed) => {
+                                  if (confirmed) {
+                                    handleBuySlot();
+                                  }
+                                }
+                              );
                             } else {
                               WebApp.showAlert(`Этот слот заблокирован. Разблокируйте его в магазине за Stars!`);
                             }
@@ -735,32 +742,42 @@ export default function App() {
                     </div>
                   ) : (
                     <div className="space-y-3">
+                      {/* Slaves List Header */}
+                      <div className="px-4 flex text-[10px] font-black uppercase text-slate-500 tracking-widest">
+                        <div className="flex-1">Игрок</div>
+                        <div className="w-24 text-center">Доход</div>
+                        <div className="w-24 text-right">Выкуп</div>
+                      </div>
+
                       {slaves.map(slave => (
                         <div 
                           key={slave.telegram_id} 
                           onClick={() => setSelectedSlave(slave)}
                           className="glass-card p-4 flex justify-between items-center group active:scale-[0.98] transition-all cursor-pointer"
                         >
-                          <div className="flex items-center gap-4">
-                            <div className="w-10 h-10 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center border border-black/10 dark:border-white/10">
+                          <div className="flex items-center gap-3 flex-1 min-w-0">
+                            <div className="w-10 h-10 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center border border-black/10 dark:border-white/10 shrink-0">
                               <User className="w-5 h-5 text-slate-400" />
                             </div>
-                            <div>
-                              <div className="font-bold flex items-center gap-2">
+                            <div className="min-w-0">
+                              <div className="font-bold flex items-center gap-2 truncate">
                                 {slave.username}
                                 {slave.on_market && (
-                                  <span className="text-[8px] bg-crypto-gold/20 text-crypto-gold px-1.5 py-0.5 rounded font-black uppercase">На рынке</span>
+                                  <span className="text-[8px] bg-crypto-gold/20 text-crypto-gold px-1.5 py-0.5 rounded font-black uppercase shrink-0">На рынке</span>
                                 )}
                               </div>
-                              <div className="text-[10px] text-crypto-emerald font-bold">+{slave.base_income} / мин</div>
+                              <div className="text-[9px] text-slate-500 truncate">ID: {slave.telegram_id}</div>
                             </div>
                           </div>
-                          <div className="flex items-center gap-3">
-                            <div className="text-right">
-                              <div className="text-sm font-black">{slave.current_price.toLocaleString()}</div>
-                              <div className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase">Цена</div>
-                            </div>
-                            <ArrowRight className="w-4 h-4 text-slate-400 group-hover:translate-x-1 transition-transform" />
+
+                          <div className="w-24 text-center">
+                            <div className="text-xs font-black text-crypto-emerald">+{slave.base_income}</div>
+                            <div className="text-[8px] text-slate-500 font-bold uppercase leading-none">/ мин</div>
+                          </div>
+
+                          <div className="w-24 text-right">
+                            <div className="text-sm font-black">{slave.current_price.toLocaleString()}</div>
+                            <div className="text-[8px] text-slate-500 font-bold uppercase leading-none">Монет</div>
                           </div>
                         </div>
                       ))}
