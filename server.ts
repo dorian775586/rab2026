@@ -117,7 +117,8 @@ app.post("/api/sync", validateTelegram, async (req, res) => {
           telegram_id: String(id), 
           username: username || `User_${id}`,
           owner_id: inviterId,
-          balance: 0 // Убрали начальный баланс
+          balance: 0,
+          base_income: 0
         }])
         .select()
         .single();
@@ -471,9 +472,8 @@ app.get("/api/slaves", validateTelegram, async (req, res) => {
   try {
     const { data, error } = await supabase
       .from("users")
-      .select("telegram_id, username, current_price, base_income, level")
-      .eq("owner_id", String(tgUser.id))
-      .eq("on_market", false);
+      .select("telegram_id, username, current_price, base_income, level, on_market")
+      .eq("owner_id", String(tgUser.id));
     
     if (error) throw error;
     res.json(data);

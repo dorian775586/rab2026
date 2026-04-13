@@ -54,6 +54,7 @@ interface MarketUser {
   current_price: number;
   base_income: number;
   level?: number;
+  on_market?: boolean;
 }
 
 interface LeaderboardUser {
@@ -745,7 +746,12 @@ export default function App() {
                               <User className="w-5 h-5 text-slate-400" />
                             </div>
                             <div>
-                              <div className="font-bold">{slave.username}</div>
+                              <div className="font-bold flex items-center gap-2">
+                                {slave.username}
+                                {slave.on_market && (
+                                  <span className="text-[8px] bg-crypto-gold/20 text-crypto-gold px-1.5 py-0.5 rounded font-black uppercase">На рынке</span>
+                                )}
+                              </div>
                               <div className="text-[10px] text-crypto-emerald font-bold">+{slave.base_income} / мин</div>
                             </div>
                           </div>
