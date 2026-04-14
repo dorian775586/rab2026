@@ -153,7 +153,7 @@ export default function App() {
           'Content-Type': 'application/json',
           'x-telegram-init-data': WebApp.initData,
         },
-        body: JSON.stringify({ referrerId: startParam })
+        body: JSON.stringify({ referrerId: startParam || null })
       });
       const data = await response.json();
       if (response.ok) {

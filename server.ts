@@ -110,33 +110,46 @@ app.post("/api/sync", validateTelegram, async (req, res) => {
   const urlParams = new URLSearchParams(initData);
   const startParam = urlParams.get("start_param");
 
+  // Robust inviter ID extraction
+  let inviterId: string | null = null;
+  const rawInviter = startParam || referrerId;
+  if (rawInviter && /^\d+$/.test(String(rawInviter))) {
+    inviterId = String(rawInviter);
+  }
+
+  console.log(`[Sync] User: ${id} (${username}). Inviter from request: ${inviterId}`);
+
   try {
     // Get user from DB
     let { data: user, error } = await supabase
       .from("users")
       .select("*, owner:owner_id(username)")
       .eq("telegram_id", BigInt(id).toString())
-      .single();
+      .maybeSingle();
 
-    if (error && error.code === "PGRST116") {
+    if (!user) {
       // User doesn't exist, create them
-      let inviterId: string | null = null;
-      if (startParam && !isNaN(Number(startParam))) {
-        inviterId = BigInt(startParam).toString();
-      } else if (referrerId && !isNaN(Number(referrerId))) {
-        inviterId = BigInt(referrerId).toString();
+      console.log(`[Sync] Creating new user: ${id}`);
+      
+      // Don't allow self-referral
+      if (inviterId === BigInt(id).toString()) {
+        console.log("[Sync] Self-referral blocked");
+        inviterId = null;
       }
 
-      // Проверяем, существует ли пригласитель на самом деле
+      // Verify inviter exists in DB
       if (inviterId) {
-        const { data: inviterExists } = await supabase
+        const { data: inviterData, error: inviterErr } = await supabase
           .from("users")
-          .select("telegram_id")
-          .eq("telegram_id", inviterId)
-          .single();
+          .select("telegram_id, username")
+          .eq("telegram_id", BigInt(inviterId).toString())
+          .maybeSingle();
         
-        if (!inviterExists) {
-          inviterId = null; // Если его нет в базе, обнуляем, чтобы insert не упал
+        if (!inviterData) {
+          console.log(`[Sync] Inviter ${inviterId} NOT found in database. User will be free.`);
+          inviterId = null;
+        } else {
+          console.log(`[Sync] Inviter ${inviterId} (${inviterData.username}) confirmed.`);
         }
       }
 
@@ -146,19 +159,25 @@ app.post("/api/sync", validateTelegram, async (req, res) => {
           telegram_id: BigInt(id).toString(), 
           username: username || `User_${id}`,
           photo_url: photo_url || null,
-          owner_id: inviterId,
-          balance: 0,
-          base_income: 0
+          owner_id: inviterId ? BigInt(inviterId).toString() : null,
+          balance: 500, // Даем 500 монет новым игрокам для старта
+          base_income: 0,
+          current_price: 50
         }])
-        .select()
+        .select("*, owner:owner_id(username)")
         .single();
       
-      if (createError) throw createError;
+      if (createError) {
+        console.error("[Sync] Create user error:", createError);
+        throw createError;
+      }
       user = newUser;
+      console.log(`[Sync] User ${id} created. Owner: ${inviterId || 'None'}`);
 
       // Reward inviter
       if (inviterId) {
-        await supabase.rpc('reward_inviter', { inviter_id: inviterId });
+        await supabase.rpc('reward_inviter', { inviter_id: BigInt(inviterId).toString() });
+        console.log(`[Sync] Inviter ${inviterId} rewarded with bonus coins`);
       }
     } else if (error) {
       throw error;
