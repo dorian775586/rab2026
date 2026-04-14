@@ -472,18 +472,29 @@ export default function App() {
           'Content-Type': 'application/json',
           'x-telegram-init-data': WebApp.initData 
         },
-        body: JSON.stringify({ slaveId: listingSlaveId, price: Number(listingPrice) }),
+        body: JSON.stringify({ 
+          slaveId: String(listingSlaveId), // Передаем как строку для безопасности BigInt
+          price: Number(listingPrice) 
+        }),
       });
-      if (response.ok) {
+      
+      const data = await response.json();
+      
+      if (response.ok && data.success) {
         WebApp.showAlert('Раб выставлен на рынок!');
         setListingModal(null);
         setListingPrice('');
         setListingSlaveId(null);
         fetchSlaves();
         fetchMyListings();
+      } else {
+        // Выводим ошибку от сервера в алерт для теста
+        WebApp.showAlert(`Сервер: ${data.message || 'Ошибка'}`);
+        console.error("Детали ошибки:", data);
       }
     } catch (err) {
-      WebApp.showAlert('Ошибка выставления');
+      console.error('Ошибка сети:', err);
+      WebApp.showAlert('Ошибка сети: сервер недоступен');
     } finally {
       setActionLoading(null);
     }
@@ -749,7 +760,7 @@ export default function App() {
                           </div>
 
                           <div className="w-24 text-right">
-                            <div className="text-sm font-black">{slave.current_price.toLocaleString()}</div>
+                            <div className="text-sm font-black text-slate-900 dark:text-white">{slave.current_price.toLocaleString()}</div>
                             <div className="text-[8px] text-slate-500 font-bold uppercase leading-none">Монет</div>
                           </div>
                         </div>
@@ -792,11 +803,11 @@ export default function App() {
                           {listing ? (
                             <div className="w-full h-full flex flex-col items-center justify-center text-center">
                               <User className="w-6 h-6 text-crypto-gold mb-2" />
-                              <div className="text-[10px] font-bold truncate w-full">{listing.slave.username}</div>
-                              <div className="text-xs font-black text-crypto-gold">{listing.price.toLocaleString()}</div>
+                              <div className="text-[10px] font-bold truncate w-full text-slate-900 dark:text-white">{listing.slave.username}</div>
+                              <div className="text-xs font-black text-amber-600 dark:text-crypto-gold">{listing.price.toLocaleString()}</div>
                               <button 
                                 onClick={(e) => { e.stopPropagation(); handleUnlist(listing.slave_id); }}
-                                className="mt-2 text-[8px] font-black uppercase text-red-400 hover:text-red-300"
+                                className="mt-2 text-[8px] font-black uppercase text-red-500 hover:text-red-400"
                               >
                                 Снять
                               </button>
@@ -900,18 +911,18 @@ export default function App() {
                     exit={{ opacity: 0, y: 100 }}
                     className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-end"
                   >
-                    <div className="w-full bg-[var(--crypto-bg)] rounded-t-[32px] p-8 space-y-6 border-t border-white/10">
+                    <div className="w-full bg-white dark:bg-[#1a1d23] rounded-t-[32px] p-8 space-y-6 border-t border-black/10 dark:border-white/10">
                       <div className="flex justify-between items-center">
                         <div className="flex items-center gap-4">
                           <div className="w-14 h-14 rounded-full bg-crypto-gold/10 flex items-center justify-center">
                             <User className="w-8 h-8 text-crypto-gold" />
                           </div>
                           <div>
-                            <h3 className="text-2xl font-black">{selectedSlave.username}</h3>
+                            <h3 className="text-2xl font-black text-slate-900 dark:text-white">{selectedSlave.username}</h3>
                             <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">Уровень {selectedSlave.level} / 20</p>
                           </div>
                         </div>
-                        <button onClick={() => setSelectedSlave(null)} className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center font-bold">✕</button>
+                        <button onClick={() => setSelectedSlave(null)} className="w-10 h-10 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center font-bold text-slate-900 dark:text-white">✕</button>
                       </div>
 
                       <div className="grid grid-cols-2 gap-4">
@@ -921,7 +932,7 @@ export default function App() {
                         </div>
                         <div className="glass-card p-4">
                           <span className="text-[10px] text-slate-500 font-bold uppercase">Стоимость</span>
-                          <div className="text-xl font-black">{selectedSlave.current_price.toLocaleString()}</div>
+                          <div className="text-xl font-black text-slate-900 dark:text-white">{selectedSlave.current_price.toLocaleString()}</div>
                         </div>
                       </div>
 
@@ -998,7 +1009,7 @@ export default function App() {
                     </div>
                     <div className="flex items-center gap-4">
                       <div className="text-right">
-                        <div className="text-sm font-black text-crypto-gold">{listing.price.toLocaleString()}</div>
+                        <div className="text-sm font-black text-amber-600 dark:text-crypto-gold">{listing.price.toLocaleString()}</div>
                         <div className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase leading-none">Цена</div>
                       </div>
                       <button 

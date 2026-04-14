@@ -168,24 +168,24 @@ DECLARE
     u RECORD;
 BEGIN
     -- Check ownership
-    IF NOT EXISTS (SELECT 1 FROM users WHERE telegram_id = slave_id AND owner_id = seller_id) THEN
+    IF NOT EXISTS (SELECT 1 FROM users WHERE telegram_id = list_on_market.slave_id AND owner_id = list_on_market.seller_id) THEN
         RETURN json_build_object('success', false, 'message', 'Вы не владелец этого раба');
     END IF;
 
     SELECT COUNT(*), (SELECT market_slots_unlocked FROM users WHERE telegram_id = list_on_market.seller_id) 
     INTO listing_count, slots_unlocked 
-    FROM market_listings WHERE seller_id = list_on_market.seller_id;
+    FROM market_listings WHERE market_listings.seller_id = list_on_market.seller_id;
     
     -- If trying to use a locked slot
     IF listing_count >= slots_unlocked THEN
         -- Special case: Auto-buy 2nd slot for 1000 coins if they have 1 slot and try to list 2nd
         IF slots_unlocked = 1 AND listing_count = 1 THEN
-            SELECT balance INTO u FROM users WHERE telegram_id = seller_id;
+            SELECT balance INTO u FROM users WHERE telegram_id = list_on_market.seller_id;
             IF u.balance < 1000 THEN
                 RETURN json_build_object('success', false, 'message', 'Недостаточно монет для разблокировки 2-го слота (нужно 1000)');
             END IF;
             -- Deduct and unlock
-            UPDATE users SET balance = balance - 1000, market_slots_unlocked = 2 WHERE telegram_id = seller_id;
+            UPDATE users SET balance = balance - 1000, market_slots_unlocked = 2 WHERE telegram_id = list_on_market.seller_id;
             slots_unlocked := 2;
         ELSE
             RETURN json_build_object('success', false, 'message', 'Нет свободных слотов. Разблокируйте новые слоты в магазине!');
@@ -193,10 +193,10 @@ BEGIN
     END IF;
 
     INSERT INTO market_listings (seller_id, slave_id, price)
-    VALUES (seller_id, slave_id, price)
+    VALUES (list_on_market.seller_id, list_on_market.slave_id, list_on_market.price)
     ON CONFLICT (slave_id) DO UPDATE SET price = EXCLUDED.price;
 
-    UPDATE users SET on_market = TRUE, market_price = price WHERE telegram_id = slave_id;
+    UPDATE users SET on_market = TRUE, market_price = list_on_market.price WHERE telegram_id = list_on_market.slave_id;
 
     RETURN json_build_object('success', true);
 END;
@@ -208,12 +208,12 @@ CREATE OR REPLACE FUNCTION unlist_from_market(
     slave_id BIGINT
 ) RETURNS JSON AS $$
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM market_listings WHERE slave_id = slave_id AND seller_id = seller_id) THEN
+    IF NOT EXISTS (SELECT 1 FROM market_listings WHERE market_listings.slave_id = unlist_from_market.slave_id AND market_listings.seller_id = unlist_from_market.seller_id) THEN
         RETURN json_build_object('success', false, 'message', 'Объявление не найдено');
     END IF;
 
-    DELETE FROM market_listings WHERE slave_id = slave_id;
-    UPDATE users SET on_market = FALSE, market_price = NULL WHERE telegram_id = slave_id;
+    DELETE FROM market_listings WHERE market_listings.slave_id = unlist_from_market.slave_id;
+    UPDATE users SET on_market = FALSE, market_price = NULL WHERE telegram_id = unlist_from_market.slave_id;
 
     RETURN json_build_object('success', true);
 END;
