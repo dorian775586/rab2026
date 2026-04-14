@@ -552,10 +552,11 @@ export default function App() {
     );
   }
 
-  const filteredMarket = market.filter(m => 
-    m.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    m.telegram_id.toString().includes(searchQuery)
-  );
+  const filteredMarket = market.filter(m => {
+    if (!m.slave) return false;
+    return (m.slave.username || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+           (m.slave.telegram_id || '').toString().includes(searchQuery);
+  });
 
   return (
     <div className="min-h-screen flex flex-col pb-32">
@@ -906,6 +907,7 @@ export default function App() {
               <AnimatePresence>
                 {selectedSlave && (
                   <motion.div 
+                    key="slave-details"
                     initial={{ opacity: 0, y: 100 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: 100 }}
@@ -922,7 +924,15 @@ export default function App() {
                             <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">Уровень {selectedSlave.level} / 20</p>
                           </div>
                         </div>
-                        <button onClick={() => setSelectedSlave(null)} className="w-10 h-10 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center font-bold text-slate-900 dark:text-white">✕</button>
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedSlave(null);
+                          }} 
+                          className="w-10 h-10 rounded-full bg-black/10 dark:bg-white/10 flex items-center justify-center font-bold text-slate-900 dark:text-white z-[60] active:scale-90 transition-transform"
+                        >
+                          ✕
+                        </button>
                       </div>
 
                       <div className="grid grid-cols-2 gap-4">
@@ -996,7 +1006,7 @@ export default function App() {
               </div>
 
               <div className="space-y-3">
-                {market.map((listing: any) => (
+                {filteredMarket.map((listing: any) => (
                   <div key={listing.id} className="glass-card p-4 flex justify-between items-center">
                     <div className="flex items-center gap-4" onClick={() => fetchProfile(listing.slave.telegram_id)}>
                       <div className="w-10 h-10 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center border border-black/10 dark:border-white/10">

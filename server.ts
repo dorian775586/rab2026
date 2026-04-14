@@ -151,8 +151,7 @@ app.post("/api/sync", validateTelegram, async (req, res) => {
       const { data: slavesData, error: slavesError } = await supabase
         .from("users")
         .select("base_income")
-        .eq("owner_id", BigInt(id).toString())
-        .eq("on_market", false);
+        .eq("owner_id", BigInt(id).toString());
 
       if (slavesError) throw slavesError;
 
