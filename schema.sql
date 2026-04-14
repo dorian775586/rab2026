@@ -368,14 +368,11 @@ BEGIN
         multiplier := 0;
         win_amt := 0;
         res_type := 'loss';
-        
-        IF NOT is_free THEN
-            UPDATE globals SET value_int = value_int + actual_bet, value = NULL WHERE key = 'jackpot_fund';
-        END IF;
     END IF;
 
-    -- Если выиграл меньше ставки, разница идет в джекпот
-    IF NOT is_free AND win_amt < actual_bet AND res_type != 'jackpot' THEN
+    -- Начисление в джекпот: разница между ставкой и выигрышем (если выигрыш меньше ставки)
+    -- Это покрывает и проигрыш (win_amt = 0), и x0.5 (win_amt = 0.5 * bet)
+    IF NOT is_free AND res_type != 'jackpot' AND win_amt < actual_bet THEN
         UPDATE globals SET value_int = value_int + (actual_bet - win_amt), value = NULL WHERE key = 'jackpot_fund';
     END IF;
 
