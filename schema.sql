@@ -266,19 +266,21 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- RPC for roulette spin
-CREATE OR REPLACE FUNCTION spin_roulette(user_id_param BIGINT, bet_param BIGINT, is_free BOOLEAN)
+CREATE OR REPLACE FUNCTION spin_roulette(user_id_param BIGINT, bet_param INT, is_free BOOLEAN)
 RETURNS JSON AS $$
 DECLARE
-    user_balance BIGINT;
+    u_balance BIGINT;
     jackpot_current BIGINT;
     rand_val INT;
-    result_type TEXT;
-    win_amount BIGINT;
+    segment_idx INT;
+    multiplier DECIMAL;
+    win_amt BIGINT;
     actual_bet BIGINT;
+    final_balance BIGINT;
 BEGIN
     -- 1. Определяем эффективную ставку
     IF is_free THEN
-        actual_bet := 100; -- Для фри-спина считаем выигрыш от базы в 100 монет
+        actual_bet := 100;
     ELSE
         actual_bet := bet_param;
     END IF;
@@ -287,37 +289,60 @@ BEGIN
     SELECT COALESCE((value->>0)::bigint, value_int) INTO jackpot_current FROM globals WHERE key = 'jackpot_fund';
     
     -- 3. Проверяем баланс и кулдаун
-    SELECT balance INTO user_balance FROM users WHERE telegram_id = user_id_param;
+    SELECT balance INTO u_balance FROM users WHERE telegram_id = user_id_param;
     
     IF is_free THEN
-        -- Проверка кулдауна для бесплатного спина
         IF EXISTS (SELECT 1 FROM users WHERE telegram_id = user_id_param AND last_free_spin > NOW() - INTERVAL '1 day') THEN
             RETURN json_build_object('error', 'Бесплатный спин доступен раз в 24 часа');
         END IF;
     ELSE
-        -- Проверка баланса для платного спина
-        IF user_balance < actual_bet THEN
+        IF u_balance < actual_bet THEN
             RETURN json_build_object('error', 'Недостаточно средств');
         END IF;
     END IF;
 
-    -- 4. Логика шансов
+    -- 4. Логика шансов и сегментов
+    -- 0: JACKPOT (1%)
+    -- 1, 4, 7: EMPTY (45%)
+    -- 2: x0.5 (25%)
+    -- 3: x2 (15%)
+    -- 5: x10 (5%)
+    -- 6: BONUS x2 (9%)
+    
     rand_val := floor(random() * 100);
-    IF rand_val < 1 THEN -- 1% Джекпот
-        result_type := 'jackpot';
-        win_amount := jackpot_current;
+    
+    IF rand_val < 1 THEN -- 1% Jackpot
+        segment_idx := 0;
+        multiplier := 0; -- Special case
+        win_amt := jackpot_current;
         UPDATE globals SET value = '1000'::jsonb, value_int = 1000 WHERE key = 'jackpot_fund';
-    ELSIF rand_val < 15 THEN -- 14% x2
-        result_type := 'x2';
-        win_amount := actual_bet * 2;
-    ELSIF rand_val < 30 THEN -- 15% x0.5 (возврат половины)
-        result_type := 'x0.5';
-        win_amount := floor(actual_bet * 0.5);
-    ELSE -- Проигрыш
-        result_type := 'empty';
-        win_amount := 0;
+    ELSIF rand_val < 6 THEN -- 5% x10
+        segment_idx := 5;
+        multiplier := 10;
+        win_amt := actual_bet * 10;
+    ELSIF rand_val < 15 THEN -- 9% Bonus x2
+        segment_idx := 6;
+        multiplier := 2;
+        win_amt := actual_bet * 2;
+    ELSIF rand_val < 30 THEN -- 15% x2
+        segment_idx := 3;
+        multiplier := 2;
+        win_amt := actual_bet * 2;
+    ELSIF rand_val < 55 THEN -- 25% x0.5
+        segment_idx := 2;
+        multiplier := 0.5;
+        win_amt := floor(actual_bet * 0.5);
+    ELSE -- 45% Empty
+        -- Pick one of 1, 4, 7
+        rand_val := floor(random() * 3);
+        IF rand_val = 0 THEN segment_idx := 1;
+        ELSIF rand_val = 1 THEN segment_idx := 4;
+        ELSE segment_idx := 7;
+        END IF;
+        multiplier := 0;
+        win_amt := 0;
+        
         IF NOT is_free THEN
-            -- Добавляем 10% от ставки в джекпот при проигрыше
             UPDATE globals SET 
                 value = (jackpot_current + floor(actual_bet * 0.1))::text::jsonb,
                 value_int = jackpot_current + floor(actual_bet * 0.1)
@@ -327,11 +352,26 @@ BEGIN
 
     -- 5. Обновляем пользователя
     UPDATE users 
-    SET balance = balance - (CASE WHEN is_free THEN 0 ELSE actual_bet END) + win_amount,
+    SET balance = balance - (CASE WHEN is_free THEN 0 ELSE actual_bet END) + win_amt,
         last_free_spin = (CASE WHEN is_free THEN NOW() ELSE last_free_spin END)
-    WHERE telegram_id = user_id_param;
+    WHERE telegram_id = user_id_param
+    RETURNING balance INTO final_balance;
 
-    RETURN json_build_object('result', result_type, 'win', win_amount);
+    RETURN json_build_object(
+        'win_multiplier', multiplier,
+        'segment_index', segment_idx,
+        'new_balance', final_balance,
+        'win_amount', win_amt,
+        'type', CASE 
+            WHEN segment_idx = 0 THEN 'jackpot'
+            WHEN segment_idx IN (1, 4, 7) THEN 'empty'
+            WHEN segment_idx = 2 THEN 'x0.5'
+            WHEN segment_idx = 3 THEN 'x2'
+            WHEN segment_idx = 5 THEN 'x10'
+            WHEN segment_idx = 6 THEN 'bonus'
+            ELSE 'empty'
+        END
+    );
 END;
 $$ LANGUAGE plpgsql;
 

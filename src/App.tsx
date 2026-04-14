@@ -355,22 +355,7 @@ export default function App() {
       const data = await response.json();
       
       if (response.ok && data.success) {
-        // Map result type to a segment angle
-        // 0: Jackpot, 1: Empty, 2: x0.5, 3: x2, 4: Empty, 5: x10, 6: Bonus, 7: Empty
-        const typeToSegment: Record<string, number> = {
-          'jackpot': 0,
-          'empty': 1, // We have multiple empty slots
-          'x0.5': 2,
-          'x2': 3,
-          'bonus': 6,
-          'x10': 5
-        };
-        
-        let segment = typeToSegment[data.type] || 1;
-        if (data.type === 'empty') {
-          const emptySegments = [1, 4, 7];
-          segment = emptySegments[Math.floor(Math.random() * emptySegments.length)];
-        }
+        const segment = data.segment !== undefined ? data.segment : 1;
         
         const targetRotation = baseRotation + (360 - (segment * 45));
         setWheelRotation(targetRotation);

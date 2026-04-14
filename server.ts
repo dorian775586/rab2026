@@ -258,8 +258,10 @@ app.post("/api/spin", validateTelegram, async (req, res) => {
     // Normalize response for frontend
     const result = {
       success: true,
-      type: data.result ? data.result.toLowerCase() : 'empty',
-      win: data.win || 0
+      type: data.type || 'empty',
+      win: data.win_amount || 0,
+      segment: data.segment_index,
+      newBalance: data.new_balance
     };
     
     console.log(`Spin result for ${tgUser.id}:`, result);
