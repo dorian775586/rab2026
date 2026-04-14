@@ -156,47 +156,38 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- RPC for listing a slave on market
+-- RPC for listing on market
 CREATE OR REPLACE FUNCTION list_on_market(
-    seller_id BIGINT,
-    slave_id BIGINT,
-    price BIGINT
+    seller_id_param BIGINT,
+    slave_id_param BIGINT,
+    price_param BIGINT
 ) RETURNS JSON AS $$
 DECLARE
     listing_count INTEGER;
     slots_unlocked INTEGER;
-    u RECORD;
 BEGIN
-    -- Check ownership
-    IF NOT EXISTS (SELECT 1 FROM users WHERE telegram_id = list_on_market.slave_id AND owner_id = list_on_market.seller_id) THEN
+    -- Проверяем владение, используя _param
+    IF NOT EXISTS (SELECT 1 FROM users WHERE telegram_id = slave_id_param AND owner_id = seller_id_param) THEN
         RETURN json_build_object('success', false, 'message', 'Вы не владелец этого раба');
     END IF;
 
-    SELECT COUNT(*), (SELECT market_slots_unlocked FROM users WHERE telegram_id = list_on_market.seller_id) 
+    -- Считаем слоты
+    SELECT COUNT(*), (SELECT market_slots_unlocked FROM users WHERE telegram_id = seller_id_param) 
     INTO listing_count, slots_unlocked 
-    FROM market_listings WHERE market_listings.seller_id = list_on_market.seller_id;
+    FROM market_listings WHERE seller_id = seller_id_param;
     
-    -- If trying to use a locked slot
     IF listing_count >= slots_unlocked THEN
-        -- Special case: Auto-buy 2nd slot for 1000 coins if they have 1 slot and try to list 2nd
-        IF slots_unlocked = 1 AND listing_count = 1 THEN
-            SELECT balance INTO u FROM users WHERE telegram_id = list_on_market.seller_id;
-            IF u.balance < 1000 THEN
-                RETURN json_build_object('success', false, 'message', 'Недостаточно монет для разблокировки 2-го слота (нужно 1000)');
-            END IF;
-            -- Deduct and unlock
-            UPDATE users SET balance = balance - 1000, market_slots_unlocked = 2 WHERE telegram_id = list_on_market.seller_id;
-            slots_unlocked := 2;
-        ELSE
-            RETURN json_build_object('success', false, 'message', 'Нет свободных слотов. Разблокируйте новые слоты в магазине!');
-        END IF;
+        RETURN json_build_object('success', false, 'message', 'Нет свободных слотов');
     END IF;
 
+    -- Вставляем данные
     INSERT INTO market_listings (seller_id, slave_id, price)
-    VALUES (list_on_market.seller_id, list_on_market.slave_id, list_on_market.price)
+    VALUES (seller_id_param, slave_id_param, price_param)
     ON CONFLICT (slave_id) DO UPDATE SET price = EXCLUDED.price;
 
-    UPDATE users SET on_market = TRUE, market_price = list_on_market.price WHERE telegram_id = list_on_market.slave_id;
+    -- Обновляем юзера
+    UPDATE users SET on_market = TRUE, market_price = price_param 
+    WHERE telegram_id = slave_id_param;
 
     RETURN json_build_object('success', true);
 END;

@@ -418,9 +418,9 @@ app.post("/api/market/list", validateTelegram, async (req, res) => {
   const { slaveId, price } = req.body;
   try {
     const { data, error } = await supabase.rpc("list_on_market", {
-      seller_id: BigInt(tgUser.id).toString(),
-      slave_id: BigInt(slaveId).toString(),
-      price: Number(price)
+      seller_id_param: BigInt(tgUser.id).toString(),
+      slave_id_param: BigInt(slaveId).toString(),
+      price_param: Math.floor(Number(price))
     });
     if (error) throw error;
     res.json(data);
