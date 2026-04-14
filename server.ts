@@ -19,6 +19,30 @@ const supabaseUrl = process.env.SUPABASE_URL || "";
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 const supabase = createClient(supabaseUrl, supabaseKey);
 
+async function getFullUser(telegramId: string) {
+  const { data: user, error } = await supabase
+    .from("users")
+    .select("*, owner:owner_id(username)")
+    .eq("telegram_id", telegramId)
+    .single();
+
+  if (error) throw error;
+
+  const { data: allSlaves } = await supabase
+    .from("users")
+    .select("base_income, on_market")
+    .eq("owner_id", telegramId);
+
+  const slavesCount = allSlaves?.length || 0;
+  const totalSlavesIncome = (allSlaves || []).reduce((acc, s) => acc + (s.base_income || 0), 0);
+
+  return {
+    ...user,
+    slaves_count: slavesCount,
+    total_income: (user.personal_income || 1) + totalSlavesIncome
+  };
+}
+
 // Telegram Validation Middleware
 const validateTelegram = (req: express.Request, res: express.Response, next: express.NextFunction) => {
   const initData = req.headers["x-telegram-init-data"] as string;
@@ -158,34 +182,17 @@ app.post("/api/sync", validateTelegram, async (req, res) => {
       const slavesIncome = (slavesData || []).reduce((acc, s) => acc + (s.base_income || 0), 0);
       const income = diffMins * ((user.personal_income || 1) + slavesIncome);
       
-      const { data: updatedUser, error: updateError } = await supabase
+      await supabase
         .from("users")
         .update({ 
           balance: user.balance + income,
           last_collect_time: now.toISOString()
         })
-        .eq("telegram_id", BigInt(id).toString())
-        .select("*, owner:owner_id(username)")
-        .single();
-      
-      if (updateError) throw updateError;
-      user = updatedUser;
+        .eq("telegram_id", BigInt(id).toString());
     }
 
-    // Get slaves count and total income for the response
-    const { data: allSlaves } = await supabase
-      .from("users")
-      .select("base_income, on_market")
-      .eq("owner_id", BigInt(id).toString());
-    
-    const slavesCount = allSlaves?.length || 0;
-    const totalSlavesIncome = (allSlaves || []).reduce((acc, s) => acc + (s.base_income || 0), 0);
-
-    res.json({ 
-      ...user, 
-      slaves_count: slavesCount,
-      total_income: (user.personal_income || 1) + totalSlavesIncome
-    });
+    const fullUser = await getFullUser(BigInt(id).toString());
+    res.json(fullUser);
   } catch (err: any) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -375,13 +382,8 @@ app.post("/api/buy", validateTelegram, async (req, res) => {
     if (error) throw error;
     
     if (data.success) {
-      // Fetch updated user
-      const { data: updatedUser } = await supabase
-        .from("users")
-        .select("*, owner:owner_id(username)")
-        .eq("telegram_id", BigInt(tgUser.id).toString())
-        .single();
-      res.json({ ...data, user: updatedUser });
+      const fullUser = await getFullUser(BigInt(tgUser.id).toString());
+      res.json({ ...data, user: fullUser });
     } else {
       res.status(400).json(data);
     }
@@ -436,7 +438,13 @@ app.post("/api/market/buy", validateTelegram, async (req, res) => {
       slave_id: BigInt(slaveId).toString()
     });
     if (error) throw error;
-    res.json(data);
+    
+    if (data.success) {
+      const fullUser = await getFullUser(BigInt(tgUser.id).toString());
+      res.json({ ...data, user: fullUser });
+    } else {
+      res.status(400).json(data);
+    }
   } catch (err: any) {
     res.status(500).json({ success: false, message: err.message });
   }

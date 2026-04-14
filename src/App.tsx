@@ -259,6 +259,16 @@ export default function App() {
   }, [activeTab, fetchSlaves, fetchMyListings, fetchMarket, fetchGlobals, fetchLeaderboard]);
 
   const handleBuy = async (targetId: string | number) => {
+    if (targetId.toString() === user?.telegram_id.toString()) {
+      WebApp.showConfirm('Вы хотите выкупить сами себя?', (confirmed) => {
+        if (confirmed) executeBuy(targetId);
+      });
+    } else {
+      executeBuy(targetId);
+    }
+  };
+
+  const executeBuy = async (targetId: string | number) => {
     setActionLoading(targetId);
     try {
       const response = await fetch(API_URL + '/api/buy', {
@@ -272,6 +282,43 @@ export default function App() {
       const data = await response.json();
       if (response.ok && data.success) {
         if (data.user) setUser(data.user);
+        WebApp.HapticFeedback.notificationOccurred('success');
+      } else {
+        WebApp.showAlert(data.message || 'Ошибка при покупке');
+      }
+    } catch (err) {
+      WebApp.showAlert('Ошибка сети');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleBuyFromMarket = async (slaveId: string | number) => {
+    if (slaveId.toString() === user?.telegram_id.toString()) {
+      WebApp.showConfirm('Вы хотите выкупить сами себя?', (confirmed) => {
+        if (confirmed) executeBuyFromMarket(slaveId);
+      });
+    } else {
+      executeBuyFromMarket(slaveId);
+    }
+  };
+
+  const executeBuyFromMarket = async (slaveId: string | number) => {
+    setActionLoading(slaveId);
+    try {
+      const response = await fetch(API_URL + '/api/market/buy', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-telegram-init-data': WebApp.initData,
+        },
+        body: JSON.stringify({ slaveId }),
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        if (data.user) setUser(data.user);
+        // Optimistically remove from market list
+        setMarket(prev => prev.filter(m => m.slave.telegram_id.toString() !== slaveId.toString()));
         WebApp.HapticFeedback.notificationOccurred('success');
       } else {
         WebApp.showAlert(data.message || 'Ошибка при покупке');
@@ -1005,19 +1052,19 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="space-y-3">
+               <div className="space-y-3">
                 {filteredMarket.map((listing: any) => (
-                  <div key={listing.id} className="glass-card p-4 flex justify-between items-center">
-                    <div className="flex items-center gap-4" onClick={() => fetchProfile(listing.slave.telegram_id)}>
-                      <div className="w-10 h-10 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center border border-black/10 dark:border-white/10">
+                  <div key={listing.id} className="glass-card p-4 flex justify-between items-center gap-4">
+                    <div className="flex items-center gap-4 min-w-0 flex-1" onClick={() => fetchProfile(listing.slave.telegram_id)}>
+                      <div className="w-10 h-10 rounded-full bg-black/5 dark:bg-white/5 flex-shrink-0 flex items-center justify-center border border-black/10 dark:border-white/10">
                         <User className="w-5 h-5 text-slate-400" />
                       </div>
-                      <div>
-                        <div className="font-bold">{listing.slave.username}</div>
+                      <div className="min-w-0">
+                        <div className="font-bold truncate text-sm">{listing.slave.username}</div>
                         <div className="text-[10px] text-slate-500 dark:text-slate-400 font-bold">Уровень {listing.slave.level}</div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-6">
+                    <div className="flex items-center gap-4 flex-shrink-0">
                       <div className="flex flex-col items-end justify-center">
                         <div className="flex items-center gap-1">
                           <span className="text-base font-black text-amber-600 dark:text-crypto-gold">{listing.price.toLocaleString()}</span>
@@ -1026,7 +1073,10 @@ export default function App() {
                         <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-tighter">Цена</span>
                       </div>
                       <button 
-                        onClick={() => handleBuy(listing.slave.telegram_id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleBuyFromMarket(listing.slave.telegram_id);
+                        }}
                         disabled={actionLoading === listing.slave.telegram_id || (user?.balance || 0) < listing.price}
                         className="emerald-button min-w-[80px] py-2.5 text-xs font-black"
                       >

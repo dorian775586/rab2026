@@ -92,12 +92,19 @@ BEGIN
     DELETE FROM market_listings WHERE slave_id = target_id;
 
     -- Change owner and increase price
-    UPDATE users 
-    SET owner_id = buyer_id, 
-        current_price = floor(current_price * 1.2) 
-    WHERE telegram_id = target_id;
+    IF buyer_id = target_id THEN
+        UPDATE users 
+        SET owner_id = NULL, 
+            current_price = floor(current_price * 1.2) 
+        WHERE telegram_id = target_id;
+    ELSE
+        UPDATE users 
+        SET owner_id = buyer_id, 
+            current_price = floor(current_price * 1.2) 
+        WHERE telegram_id = target_id;
+    END IF;
 
-    RETURN json_build_object('success', true, 'new_balance', buyer_user.balance - cost);
+    RETURN json_build_object('success', true, 'new_balance', (SELECT balance FROM users WHERE telegram_id = buyer_id));
 END;
 $$ LANGUAGE plpgsql;
 
@@ -220,8 +227,8 @@ $$ LANGUAGE plpgsql;
 
 -- RPC for buying from market
 CREATE OR REPLACE FUNCTION buy_from_market(
-    buyer_id BIGINT,
-    slave_id BIGINT
+    buyer_id_param BIGINT,
+    slave_id_param BIGINT
 ) RETURNS JSON AS $$
 DECLARE
     listing RECORD;
@@ -229,16 +236,16 @@ DECLARE
     seller_u RECORD;
     owner_payout BIGINT;
 BEGIN
-    SELECT * INTO listing FROM market_listings WHERE market_listings.slave_id = buy_from_market.slave_id;
+    SELECT * INTO listing FROM market_listings WHERE market_listings.slave_id = slave_id_param;
     IF NOT FOUND THEN RETURN json_build_object('success', false, 'message', 'Объявление не найдено'); END IF;
     
-    SELECT * INTO buyer_u FROM users WHERE users.telegram_id = buy_from_market.buyer_id;
+    SELECT * INTO buyer_u FROM users WHERE users.telegram_id = buyer_id_param;
     IF buyer_u.balance < listing.price THEN
         RETURN json_build_object('success', false, 'message', 'Недостаточно средств');
     END IF;
 
     -- Deduct from buyer
-    UPDATE users SET balance = balance - listing.price WHERE users.telegram_id = buy_from_market.buyer_id;
+    UPDATE users SET balance = balance - listing.price WHERE users.telegram_id = buyer_id_param;
 
     -- Payout to seller
     SELECT * INTO seller_u FROM users WHERE telegram_id = listing.seller_id;
@@ -250,17 +257,26 @@ BEGIN
     UPDATE users SET balance = balance + owner_payout WHERE telegram_id = listing.seller_id;
 
     -- Change owner and price
-    UPDATE users 
-    SET owner_id = buyer_id, 
-        current_price = floor(current_price * 1.2),
-        on_market = FALSE,
-        market_price = NULL
-    WHERE users.telegram_id = buy_from_market.slave_id;
+    IF buyer_id_param = slave_id_param THEN
+        UPDATE users 
+        SET owner_id = NULL, 
+            current_price = floor(current_price * 1.2),
+            on_market = FALSE,
+            market_price = NULL
+        WHERE users.telegram_id = slave_id_param;
+    ELSE
+        UPDATE users 
+        SET owner_id = buyer_id_param, 
+            current_price = floor(current_price * 1.2),
+            on_market = FALSE,
+            market_price = NULL
+        WHERE users.telegram_id = slave_id_param;
+    END IF;
 
     -- Remove listing
-    DELETE FROM market_listings WHERE market_listings.slave_id = buy_from_market.slave_id;
+    DELETE FROM market_listings WHERE market_listings.slave_id = slave_id_param;
 
-    RETURN json_build_object('success', true);
+    RETURN json_build_object('success', true, 'new_balance', (SELECT balance FROM users WHERE telegram_id = buyer_id_param));
 END;
 $$ LANGUAGE plpgsql;
 
