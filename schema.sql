@@ -144,13 +144,13 @@ DECLARE
     s RECORD;
     payout BIGINT;
 BEGIN
-    SELECT * INTO s FROM users WHERE telegram_id = slave_id AND owner_id = owner_id;
+    SELECT * INTO s FROM users WHERE users.telegram_id = sell_slave.slave_id AND users.owner_id = sell_slave.owner_id;
     IF NOT FOUND THEN RETURN json_build_object('success', false, 'message', 'Slave not found or not owned'); END IF;
 
     payout := floor(s.current_price * 0.8);
     
-    UPDATE users SET balance = balance + payout WHERE telegram_id = owner_id;
-    UPDATE users SET owner_id = NULL WHERE telegram_id = slave_id;
+    UPDATE users SET balance = balance + payout WHERE users.telegram_id = sell_slave.owner_id;
+    UPDATE users SET owner_id = NULL WHERE users.telegram_id = sell_slave.slave_id;
 
     RETURN json_build_object('success', true, 'payout', payout);
 END;
@@ -230,16 +230,16 @@ DECLARE
     seller_u RECORD;
     owner_payout BIGINT;
 BEGIN
-    SELECT * INTO listing FROM market_listings WHERE slave_id = slave_id;
+    SELECT * INTO listing FROM market_listings WHERE market_listings.slave_id = buy_from_market.slave_id;
     IF NOT FOUND THEN RETURN json_build_object('success', false, 'message', 'Объявление не найдено'); END IF;
-
-    SELECT * INTO buyer_u FROM users WHERE telegram_id = buyer_id;
+    
+    SELECT * INTO buyer_u FROM users WHERE users.telegram_id = buy_from_market.buyer_id;
     IF buyer_u.balance < listing.price THEN
         RETURN json_build_object('success', false, 'message', 'Недостаточно средств');
     END IF;
 
     -- Deduct from buyer
-    UPDATE users SET balance = balance - listing.price WHERE telegram_id = buyer_id;
+    UPDATE users SET balance = balance - listing.price WHERE users.telegram_id = buy_from_market.buyer_id;
 
     -- Payout to seller
     SELECT * INTO seller_u FROM users WHERE telegram_id = listing.seller_id;
@@ -256,10 +256,10 @@ BEGIN
         current_price = floor(current_price * 1.2),
         on_market = FALSE,
         market_price = NULL
-    WHERE telegram_id = slave_id;
+    WHERE users.telegram_id = buy_from_market.slave_id;
 
     -- Remove listing
-    DELETE FROM market_listings WHERE slave_id = slave_id;
+    DELETE FROM market_listings WHERE market_listings.slave_id = buy_from_market.slave_id;
 
     RETURN json_build_object('success', true);
 END;
