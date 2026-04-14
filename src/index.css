@@ -122,3 +122,26 @@ input[type=number] {
   50% { opacity: 1; }
   100% { opacity: 0; }
 }
+
+@keyframes rainbow {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.rainbow-text {
+  background: linear-gradient(
+    to right,
+    #ef4444,
+    #f59e0b,
+    #10b981,
+    #3b82f6,
+    #8b5cf6,
+    #ef4444
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: rainbow 3s linear infinite;
+  font-weight: 900;
+}

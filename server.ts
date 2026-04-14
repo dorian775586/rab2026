@@ -35,11 +35,37 @@ async function getFullUser(telegramId: string) {
 
   const slavesCount = allSlaves?.length || 0;
   const totalSlavesIncome = (allSlaves || []).reduce((acc, s) => acc + (s.base_income || 0), 0);
+  
+  let totalIncome = (user.personal_income || 1) + totalSlavesIncome;
+
+  // Apply Manager Bonuses
+  const managers = user.managers || {};
+  const managerBonuses = {
+    brigadier: 0.10,
+    smm: 0.25,
+    top_manager: 0.60,
+    oligarch: 1.50
+  };
+
+  let totalMultiplier = 1.0;
+  Object.entries(managers).forEach(([type, count]) => {
+    const bonus = managerBonuses[type as keyof typeof managerBonuses];
+    if (bonus) {
+      totalMultiplier += bonus * (count as number);
+    }
+  });
+
+  // Apply Potion Bonuses
+  const activePotions = user.active_potions || {};
+  const now = new Date().toISOString();
+  if (activePotions.rage && activePotions.rage > now) {
+    totalMultiplier += 0.50;
+  }
 
   return {
     ...user,
     slaves_count: slavesCount,
-    total_income: (user.personal_income || 1) + totalSlavesIncome
+    total_income: Math.floor(totalIncome * totalMultiplier)
   };
 }
 
@@ -420,6 +446,59 @@ app.post("/api/buy", validateTelegram, async (req, res) => {
     } else {
       res.status(400).json(data);
     }
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+app.post("/api/shop/buy", validateTelegram, async (req, res) => {
+  const tgUser = (req as any).tgUser;
+  const { itemType, itemId } = req.body;
+
+  try {
+    const { data: user, error: fetchError } = await supabase
+      .from("users")
+      .select("*")
+      .eq("telegram_id", BigInt(tgUser.id).toString())
+      .single();
+
+    if (fetchError) throw fetchError;
+
+    let updateData: any = {};
+
+    if (itemType === 'coins') {
+      const coinPackages: Record<string, number> = {
+        'handful': 5000,
+        'bag': 50000,
+        'treasury': 200000
+      };
+      const amount = coinPackages[itemId];
+      if (amount) {
+        updateData.balance = (user.balance || 0) + amount;
+      }
+    } else if (itemType === 'manager') {
+      const managers = user.managers || {};
+      managers[itemId] = (managers[itemId] || 0) + 1;
+      updateData.managers = managers;
+    } else if (itemType === 'potion') {
+      const potions = user.active_potions || {};
+      const duration = itemId === 'rage' ? 24 : 12;
+      const expiry = new Date(Date.now() + duration * 60 * 60 * 1000).toISOString();
+      potions[itemId] = expiry;
+      updateData.active_potions = potions;
+    } else if (itemType === 'extra' && itemId === 'rainbow') {
+      updateData.has_rainbow_name = true;
+    }
+
+    const { error: updateError } = await supabase
+      .from("users")
+      .update(updateData)
+      .eq("telegram_id", BigInt(tgUser.id).toString());
+
+    if (updateError) throw updateError;
+
+    const updatedUser = await getFullUser(BigInt(tgUser.id).toString());
+    res.json({ success: true, user: updatedUser });
   } catch (err: any) {
     res.status(500).json({ success: false, message: err.message });
   }

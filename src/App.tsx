@@ -24,7 +24,11 @@ import {
   Store,
   RefreshCw,
   Trash2,
-  Trophy
+  Trophy,
+  Briefcase,
+  FlaskConical,
+  Sparkles,
+  Palette
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import confetti from 'canvas-confetti';
@@ -49,6 +53,9 @@ interface UserData {
   slaves_count: number;
   total_income: number;
   photo_url: string | null;
+  managers: Record<string, number>;
+  active_potions: Record<string, string>;
+  has_rainbow_name: boolean;
 }
 
 interface MarketUser {
@@ -97,6 +104,7 @@ export default function App() {
   const [listingPrice, setListingPrice] = useState<string>('');
   const [listingSlaveId, setListingSlaveId] = useState<string | number | null>(null);
   const [shopModal, setShopModal] = useState<{ type: 'stars' | 'coins' | 'premium', isOpen: boolean } | null>(null);
+  const [shopCategory, setShopCategory] = useState<'main' | 'coins' | 'managers' | 'potions' | 'extras'>('main');
 
   const botUsername = 'rabygame_bot'; // Обновлено на реальное имя бота
 
@@ -474,27 +482,30 @@ export default function App() {
     }
   };
 
-  const handleBuyCoins = async (amount: number, stars: number) => {
-    // In real app, use WebApp.openInvoice
-    // For demo, we simulate success
-    setActionLoading(`buy-${amount}`);
+  const handleShopBuy = async (itemType: string, itemId: string) => {
+    setActionLoading(`buy-${itemType}-${itemId}`);
     try {
-      const response = await fetch(API_URL + '/api/buy-coins', {
+      const response = await fetch(API_URL + '/api/shop/buy', {
         method: 'POST',
-        headers: {
+        headers: { 
           'Content-Type': 'application/json',
-          'x-telegram-init-data': WebApp.initData,
+          'x-telegram-init-data': WebApp.initData 
         },
-        body: JSON.stringify({ amount }),
+        body: JSON.stringify({ itemType, itemId }),
       });
-      if (response.ok) {
-        WebApp.showAlert(`Успешно куплено ${amount.toLocaleString()} монет!`);
-        fetchUser();
+      const data = await response.json();
+      if (response.ok && data.success) {
+        if (data.user) setUser(data.user);
+        WebApp.showAlert('Покупка успешно завершена!');
+        WebApp.HapticFeedback.notificationOccurred('success');
+      } else {
+        WebApp.showAlert(data.message || 'Ошибка покупки');
       }
     } catch (err) {
-      WebApp.showAlert('Ошибка оплаты');
+      WebApp.showAlert('Ошибка сети');
     } finally {
       setActionLoading(null);
+      setShopModal(null);
     }
   };
 
@@ -660,7 +671,7 @@ export default function App() {
       <header className="px-6 py-4 flex justify-between items-center sticky top-0 z-30 bg-[var(--crypto-header-bg)] backdrop-blur-xl">
         <div className="flex flex-col">
           <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-[0.2em]">ID: {user?.telegram_id}</span>
-          <h1 className="text-lg font-extrabold tracking-tight">{user?.username}</h1>
+          <h1 className={`text-lg font-extrabold tracking-tight ${user?.has_rainbow_name ? 'rainbow-text' : ''}`}>{user?.username}</h1>
         </div>
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-3 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 px-4 py-2 rounded-2xl">
@@ -810,6 +821,40 @@ export default function App() {
               </div>
               
               <div className="space-y-6">
+                {/* Manager Shelf */}
+                <div className="glass-card p-3 bg-crypto-gold/5 border-crypto-gold/10">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Briefcase className="w-3 h-3 text-crypto-gold" />
+                    <span className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Менеджеры (Буст дохода)</span>
+                  </div>
+                  <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1">
+                    {[
+                      { id: 'brigadier', icon: '🧤', label: 'Бригадир' },
+                      { id: 'smm', icon: '📱', label: 'SMM' },
+                      { id: 'top_manager', icon: '👔', label: 'Топ' },
+                      { id: 'oligarch', icon: '🎩', label: 'Олигарх' }
+                    ].map(m => {
+                      const count = user?.managers?.[m.id] || 0;
+                      return (
+                        <div key={m.id} className={`flex flex-col items-center gap-1 shrink-0 transition-opacity ${count > 0 ? 'opacity-100' : 'opacity-20 grayscale'}`}>
+                          <div className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-xl relative">
+                            {m.icon}
+                            {count > 1 && (
+                              <div className="absolute -top-1 -right-1 bg-crypto-gold text-black text-[8px] font-black w-4 h-4 rounded-full flex items-center justify-center border border-black">
+                                x{count}
+                              </div>
+                            )}
+                          </div>
+                          <span className="text-[8px] font-bold uppercase text-slate-500">{m.label}</span>
+                        </div>
+                      );
+                    })}
+                    {Object.values(user?.managers || {}).every(v => v === 0) && (
+                      <div className="text-[9px] text-slate-600 italic py-2">У вас пока нет менеджеров...</div>
+                    )}
+                  </div>
+                </div>
+
                 <div className="space-y-4">
                   <h3 className="text-sm font-black uppercase tracking-widest text-slate-500">Мои Рабы</h3>
                   {slaves.length === 0 ? (
@@ -1389,119 +1434,154 @@ export default function App() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
-              className="space-y-6"
+              className="space-y-6 pb-24"
             >
-              <h2 className="text-xl font-black">Магазин</h2>
-
-              <div className="grid grid-cols-1 gap-4">
-                <ShopItem 
-                  title="500 МОНЕТ" 
-                  price="25 Stars" 
-                  icon={<Coins className="w-6 h-6 text-crypto-gold" />}
-                  onClick={() => handleBuyCoins(500, 25)}
-                  loading={actionLoading === 'buy-500'}
-                />
-                <ShopItem 
-                  title="5,000 МОНЕТ" 
-                  price="200 Stars" 
-                  icon={<div className="flex -space-x-2"><Coins className="w-6 h-6 text-crypto-gold" /><Coins className="w-6 h-6 text-crypto-gold" /></div>}
-                  onClick={() => handleBuyCoins(5000, 200)}
-                  loading={actionLoading === 'buy-5000'}
-                />
-                <ShopItem 
-                  title="PREMIUM СТАТУС" 
-                  price="50 Stars" 
-                  icon={<Crown className="w-6 h-6 text-crypto-gold" />}
-                  onClick={() => setShopModal({ type: 'premium', isOpen: true })}
-                  loading={actionLoading === 'premium'}
-                />
-                
-                <div className="glass-card p-5 border-blue-500/30 bg-blue-500/5 flex justify-between items-center">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-2xl bg-blue-500/20 flex items-center justify-center">
-                      <Shield className="w-6 h-6 text-blue-400" />
-                    </div>
-                    <div>
-                      <div className="font-black uppercase tracking-tight">НЕВИДИМКА (24ч)</div>
-                      <div className="text-[10px] text-slate-500 font-bold">Полная защита рабов</div>
-                    </div>
-                  </div>
+              <div className="flex items-center gap-4">
+                {shopCategory !== 'main' && (
                   <button 
-                    onClick={() => setShopModal({ type: 'stars', isOpen: true })}
-                    className="bg-blue-500 text-white px-4 py-2 rounded-xl font-black text-xs shadow-lg shadow-blue-500/20"
+                    onClick={() => setShopCategory('main')}
+                    className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center active:scale-90 transition-transform"
                   >
-                    50 Stars
+                    <ArrowRight className="w-5 h-5 rotate-180" />
                   </button>
-                </div>
-
-                <div className="glass-card p-5 border-indigo-500/30 bg-indigo-500/5 flex justify-between items-center">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-2xl bg-indigo-500/20 flex items-center justify-center">
-                      <Lock className="w-6 h-6 text-indigo-400" />
-                    </div>
-                    <div>
-                      <div className="font-black uppercase tracking-tight">НЕВИДИМКА (60 мин)</div>
-                      <div className="text-[10px] text-slate-500 font-bold">Краткосрочная защита</div>
-                    </div>
-                  </div>
-                  <button 
-                    onClick={() => setShopModal({ type: 'coins', isOpen: true })}
-                    className="bg-indigo-500 text-white px-4 py-2 rounded-xl font-black text-xs shadow-lg shadow-indigo-500/20"
-                  >
-                    {((user?.base_income || 0) * 20).toLocaleString()} МОНЕТ
-                  </button>
-                </div>
+                )}
+                <h2 className="text-xl font-black">
+                  {shopCategory === 'main' ? 'Магазин' : 
+                   shopCategory === 'coins' ? 'Монеты' :
+                   shopCategory === 'managers' ? 'Менеджеры' :
+                   shopCategory === 'potions' ? 'Зелья' : 'Допы'}
+                </h2>
               </div>
 
-              {/* Shop Modals */}
-              <AnimatePresence>
-                {shopModal?.isOpen && (
-                  <motion.div 
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    className="fixed inset-0 z-[60] bg-black/90 backdrop-blur-xl flex items-center justify-center px-6"
-                  >
-                    <motion.div 
-                      initial={{ scale: 0.9, y: 20 }}
-                      animate={{ scale: 1, y: 0 }}
-                      className="w-full max-w-sm glass-card p-8 text-center space-y-6 border-white/10"
-                    >
-                      <div className="w-20 h-20 rounded-3xl bg-crypto-gold/10 flex items-center justify-center mx-auto">
-                        {shopModal.type === 'stars' ? <Shield className="w-10 h-10 text-crypto-gold" /> : <Lock className="w-10 h-10 text-indigo-400" />}
-                      </div>
-                      
-                      <div className="space-y-2">
-                        <h3 className="text-2xl font-black">Спите спокойно!</h3>
-                        <p className="text-sm text-slate-400 leading-relaxed">
-                          {shopModal.type === 'stars' 
-                            ? "Эта функция даст вам невидимость на 24 часа, и никто не сможет купить ваших рабов."
-                            : "Краткосрочная защита. Никто не сможет купить ваших рабов в течение часа."
-                          }
-                        </p>
-                      </div>
+              {shopCategory === 'main' ? (
+                <div className="grid grid-cols-2 gap-4">
+                  <CategoryCard 
+                    title="Монеты" 
+                    icon={<Coins className="w-8 h-8 text-crypto-gold" />} 
+                    onClick={() => setShopCategory('coins')} 
+                  />
+                  <CategoryCard 
+                    title="Менеджеры" 
+                    icon={<Briefcase className="w-8 h-8 text-blue-400" />} 
+                    onClick={() => setShopCategory('managers')} 
+                  />
+                  <CategoryCard 
+                    title="Зелья" 
+                    icon={<FlaskConical className="w-8 h-8 text-crypto-emerald" />} 
+                    onClick={() => setShopCategory('potions')} 
+                  />
+                  <CategoryCard 
+                    title="Допы" 
+                    icon={<Sparkles className="w-8 h-8 text-purple-400" />} 
+                    onClick={() => setShopCategory('extras')} 
+                  />
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {shopCategory === 'coins' && (
+                    <>
+                      <ShopItemCard 
+                        title="Пакет «Горсть»" 
+                        desc="5,000 монет" 
+                        price="50 ⭐" 
+                        icon={<Coins className="w-6 h-6 text-crypto-gold" />}
+                        onClick={() => handleShopBuy('coins', 'handful')}
+                        loading={actionLoading === 'buy-coins-handful'}
+                      />
+                      <ShopItemCard 
+                        title="Пакет «Мешок»" 
+                        desc="50,000 монет (Выгода 30%)" 
+                        price="350 ⭐" 
+                        icon={<div className="flex -space-x-2"><Coins className="w-6 h-6 text-crypto-gold" /><Coins className="w-6 h-6 text-crypto-gold" /></div>}
+                        onClick={() => handleShopBuy('coins', 'bag')}
+                        loading={actionLoading === 'buy-coins-bag'}
+                        badge="Выгода 30%"
+                      />
+                      <ShopItemCard 
+                        title="Пакет «Казна»" 
+                        desc="200,000 монет" 
+                        price="1000 ⭐" 
+                        icon={<div className="flex -space-x-2"><Coins className="w-8 h-8 text-crypto-gold" /><Coins className="w-8 h-8 text-crypto-gold" /><Coins className="w-8 h-8 text-crypto-gold" /></div>}
+                        onClick={() => handleShopBuy('coins', 'treasury')}
+                        loading={actionLoading === 'buy-coins-treasury'}
+                        badge="Популярно"
+                      />
+                    </>
+                  )}
 
-                      <div className="space-y-3">
-                        <button 
-                          onClick={shopModal.type === 'stars' ? handleBuyGhost : shopModal.type === 'premium' ? handleBuyPremium : handleBuyGhostShort}
-                          disabled={actionLoading !== null}
-                          className="gold-button w-full py-4 text-base"
-                        >
-                          {actionLoading !== null ? <Loader2 className="w-6 h-6 animate-spin mx-auto" /> : (
-                            shopModal.type === 'stars' ? "КУПИТЬ ЗА 50 ⭐" : shopModal.type === 'premium' ? "КУПИТЬ ЗА 50 ⭐" : `КУПИТЬ ЗА ${((user?.base_income || 0) * 20).toLocaleString()} МОНЕТ`
-                          )}
-                        </button>
-                        <button 
-                          onClick={() => setShopModal(null)}
-                          className="w-full py-4 text-slate-500 font-bold text-sm"
-                        >
-                          ОТМЕНА
-                        </button>
-                      </div>
-                    </motion.div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+                  {shopCategory === 'managers' && (
+                    <>
+                      <ShopItemCard 
+                        title="Бригадир" 
+                        desc="+10% к доходу. «Работаем, братья!»" 
+                        price="100 ⭐" 
+                        icon={<span className="text-2xl">🧤</span>}
+                        onClick={() => handleShopBuy('manager', 'brigadier')}
+                        loading={actionLoading === 'buy-manager-brigadier'}
+                      />
+                      <ShopItemCard 
+                        title="SMM-щик" 
+                        desc="+25% к доходу. Создает хайп." 
+                        price="250 ⭐" 
+                        icon={<span className="text-2xl">📱</span>}
+                        onClick={() => handleShopBuy('manager', 'smm')}
+                        loading={actionLoading === 'buy-manager-smm'}
+                      />
+                      <ShopItemCard 
+                        title="Топ-Менеджер" 
+                        desc="+60% к доходу. Оптимизирует налоги." 
+                        price="600 ⭐" 
+                        icon={<span className="text-2xl">👔</span>}
+                        onClick={() => handleShopBuy('manager', 'top_manager')}
+                        loading={actionLoading === 'buy-manager-top_manager'}
+                      />
+                      <ShopItemCard 
+                        title="Олигарх" 
+                        desc="+150% к доходу. Высший уровень." 
+                        price="1500 ⭐" 
+                        icon={<span className="text-2xl">🎩</span>}
+                        onClick={() => handleShopBuy('manager', 'oligarch')}
+                        loading={actionLoading === 'buy-manager-oligarch'}
+                      />
+                    </>
+                  )}
+
+                  {shopCategory === 'potions' && (
+                    <>
+                      <ShopItemCard 
+                        title="Зелье Ярости" 
+                        desc="Доход рабов +50% на 24 часа." 
+                        price="100 ⭐" 
+                        icon={<FlaskConical className="w-6 h-6 text-red-400" />}
+                        onClick={() => handleShopBuy('potion', 'rage')}
+                        loading={actionLoading === 'buy-potion-rage'}
+                      />
+                      <ShopItemCard 
+                        title="Стелс-эликсир" 
+                        desc="Профиль скрыт на 12 часов." 
+                        price="150 ⭐" 
+                        icon={<FlaskConical className="w-6 h-6 text-blue-400" />}
+                        onClick={() => handleShopBuy('potion', 'stealth')}
+                        loading={actionLoading === 'buy-potion-stealth'}
+                      />
+                    </>
+                  )}
+
+                  {shopCategory === 'extras' && (
+                    <>
+                      <ShopItemCard 
+                        title="Радужный ник" 
+                        desc="Вечно переливающийся ник навсегда!" 
+                        price="777 ⭐" 
+                        icon={<Palette className="w-6 h-6 text-crypto-gold" />}
+                        onClick={() => handleShopBuy('extra', 'rainbow')}
+                        loading={actionLoading === 'buy-extra-rainbow'}
+                        disabled={user?.has_rainbow_name}
+                      />
+                    </>
+                  )}
+                </div>
+              )}
             </motion.div>
           )}
 
@@ -1535,7 +1615,7 @@ export default function App() {
                     </div>
                     
                     <div className="flex-1">
-                      <div className="font-black flex items-center gap-2">
+                      <div className={`font-black flex items-center gap-2 ${player.telegram_id === user?.telegram_id && user?.has_rainbow_name ? 'rainbow-text' : ''}`}>
                         {player.username}
                         {player.telegram_id === user?.telegram_id && <span className="text-[8px] bg-crypto-gold text-black px-1 rounded">ВЫ</span>}
                       </div>
@@ -1609,6 +1689,48 @@ function SortTab({ active, onClick, label }: { active: boolean, onClick: () => v
       className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider whitespace-nowrap transition-all ${active ? 'bg-crypto-gold text-black' : 'bg-white/5 text-slate-500 border border-white/5'}`}
     >
       {label}
+    </button>
+  );
+}
+
+function ShopItemCard({ title, desc, price, icon, onClick, loading, badge, disabled }: { title: string, desc: string, price: string, icon: ReactNode, onClick: () => void, loading: boolean, badge?: string, disabled?: boolean }) {
+  return (
+    <div className={`glass-card p-4 flex justify-between items-center relative overflow-hidden ${disabled ? 'opacity-50' : ''}`}>
+      {badge && (
+        <div className="absolute top-0 right-0 bg-crypto-gold text-black text-[7px] font-black px-2 py-0.5 rounded-bl-lg uppercase">
+          {badge}
+        </div>
+      )}
+      <div className="flex items-center gap-4">
+        <div className="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center">
+          {icon}
+        </div>
+        <div>
+          <div className="font-black text-sm">{title}</div>
+          <div className="text-[10px] text-slate-500 font-bold max-w-[150px] leading-tight">{desc}</div>
+        </div>
+      </div>
+      <button 
+        onClick={onClick}
+        disabled={loading || disabled}
+        className="gold-button py-2 px-4 text-[10px] h-auto min-w-[80px]"
+      >
+        {loading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : price}
+      </button>
+    </div>
+  );
+}
+
+function CategoryCard({ title, icon, onClick }: { title: string, icon: ReactNode, onClick: () => void }) {
+  return (
+    <button 
+      onClick={onClick}
+      className="glass-card p-6 flex flex-col items-center justify-center gap-4 active:scale-95 transition-all border-white/10 hover:border-crypto-gold/30 group"
+    >
+      <div className="w-16 h-16 rounded-3xl bg-white/5 flex items-center justify-center group-hover:bg-crypto-gold/10 transition-colors">
+        {icon}
+      </div>
+      <span className="font-black uppercase tracking-widest text-xs">{title}</span>
     </button>
   );
 }

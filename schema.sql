@@ -15,7 +15,11 @@ CREATE TABLE IF NOT EXISTS users (
     last_collect_time TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     last_free_spin TIMESTAMP WITH TIME ZONE,
     photo_url TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    -- New columns for shop items
+    managers JSONB DEFAULT '{}'::jsonb, -- { "brigadier": 1, "smm": 0, ... }
+    active_potions JSONB DEFAULT '{}'::jsonb, -- { "rage": "timestamp", "stealth": "timestamp" }
+    has_rainbow_name BOOLEAN DEFAULT FALSE
 );
 
 -- Marketplace listings table
