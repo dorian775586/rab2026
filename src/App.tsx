@@ -293,6 +293,23 @@ export default function App() {
   };
 
   const executeBuy = async (targetId: string | number) => {
+    if (!user) return;
+    
+    // Check balance for self-buy or other buy
+    const targetPrice = user.telegram_id.toString() === targetId.toString() 
+      ? Math.floor(user.current_price * 1.25) 
+      : 0; // Price for others is handled server-side, but we can check if we have at least some coins
+
+    if (targetPrice > 0 && user.balance < targetPrice) {
+      WebApp.showConfirm('Недостаточно монет для выкупа! Перейти в магазин?', (ok) => {
+        if (ok) {
+          setActiveTab('shop');
+          setShopCategory('coins');
+        }
+      });
+      return;
+    }
+
     setActionLoading(targetId);
     try {
       const response = await fetch(API_URL + '/api/buy', {
@@ -328,6 +345,17 @@ export default function App() {
   };
 
   const executeBuyFromMarket = async (slaveId: string | number) => {
+    const listing = market.find(m => m.slave.telegram_id.toString() === slaveId.toString());
+    if (listing && user && user.balance < listing.price) {
+      WebApp.showConfirm('Недостаточно монет для покупки! Перейти в магазин?', (ok) => {
+        if (ok) {
+          setActiveTab('shop');
+          setShopCategory('coins');
+        }
+      });
+      return;
+    }
+
     setActionLoading(slaveId);
     try {
       const response = await fetch(API_URL + '/api/market/buy', {
@@ -355,6 +383,22 @@ export default function App() {
   };
 
   const handleUpgrade = async (targetId: string | number) => {
+    // Calculate cost (standard formula used in UI)
+    const slave = slaves.find(s => s.telegram_id.toString() === targetId.toString());
+    if (slave && user) {
+      const upgradeCost = Math.floor(slave.current_price * (slave.level || 1) * 1.5);
+      if (user.balance < upgradeCost) {
+        WebApp.showConfirm('Недостаточно монет для улучшения! Перейти в магазин?', (ok) => {
+          if (ok) {
+            setSelectedSlave(null);
+            setActiveTab('shop');
+            setShopCategory('coins');
+          }
+        });
+        return;
+      }
+    }
+
     setActionLoading(`upgrade-${targetId}`);
     try {
       const response = await fetch(API_URL + '/api/upgrade', {
@@ -408,6 +452,17 @@ export default function App() {
 
   const handleSpin = async (isFree: boolean) => {
     if (isSpinning) return;
+    
+    if (!isFree && user && user.balance < bet) {
+      WebApp.showConfirm('Недостаточно монет для игры! Перейти в магазин?', (ok) => {
+        if (ok) {
+          setActiveTab('shop');
+          setShopCategory('coins');
+        }
+      });
+      return;
+    }
+
     setIsSpinning(true);
     setSpinResult(null);
     
@@ -1306,13 +1361,13 @@ export default function App() {
                       {/* 8 segments of 45 degrees */}
                       {[
                         { color: '#FFD700', label: 'JACKPOT' }, // 0
-                        { color: '#475569', label: 'EMPTY' },   // 1
+                        { color: '#475569', label: 'ПУСТО' },   // 1
                         { color: '#3B82F6', label: 'x0.5' },    // 2
                         { color: '#10B981', label: 'x2' },      // 3
-                        { color: '#475569', label: 'EMPTY' },   // 4
+                        { color: '#475569', label: 'ПУСТО' },   // 4
                         { color: '#F59E0B', label: 'x10' },     // 5
                         { color: '#10B981', label: 'x2' },      // 6
-                        { color: '#475569', label: 'EMPTY' },   // 7
+                        { color: '#8B5CF6', label: 'x20' },     // 7
                       ].map((seg, i) => {
                         const startAngle = i * 45;
                         const endAngle = (i + 1) * 45;
@@ -1418,10 +1473,11 @@ export default function App() {
               <div className="w-full glass-card p-4 space-y-3">
                 <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Таблица выплат</h3>
                 <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-xs font-bold">
-                  <div className="flex justify-between border-b border-white/5 pb-1"><span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-[#475569]" /> ПУСТО</span><span className="text-slate-500">45%</span></div>
+                  <div className="flex justify-between border-b border-white/5 pb-1"><span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-[#475569]" /> ПУСТО</span><span className="text-slate-500">49%</span></div>
                   <div className="flex justify-between border-b border-white/5 pb-1"><span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-[#3B82F6]" /> x0.5</span><span className="text-slate-500">25%</span></div>
-                  <div className="flex justify-between border-b border-white/5 pb-1"><span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-[#10B981]" /> x2 (x2)</span><span className="text-crypto-gold">24%</span></div>
+                  <div className="flex justify-between border-b border-white/5 pb-1"><span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-[#10B981]" /> x2</span><span className="text-crypto-gold">16%</span></div>
                   <div className="flex justify-between border-b border-white/5 pb-1"><span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-[#F59E0B]" /> x10</span><span className="text-crypto-gold">5%</span></div>
+                  <div className="flex justify-between border-b border-white/5 pb-1"><span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-[#8B5CF6]" /> x20</span><span className="text-crypto-gold">4%</span></div>
                   <div className="flex justify-between border-b border-white/5 pb-1"><span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-[#FFD700]" /> JACKPOT</span><span className="text-crypto-emerald">1%</span></div>
                 </div>
               </div>

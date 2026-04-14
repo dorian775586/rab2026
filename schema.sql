@@ -343,31 +343,35 @@ BEGIN
         win_amt := jackpot_current;
         res_type := 'jackpot';
         UPDATE globals SET value_int = 1000 WHERE key = 'jackpot_fund';
-    ELSIF rand_val < 6 THEN -- 5% x10
+    ELSIF rand_val < 5 THEN -- 4% x20
+        segment_idx := 7;
+        multiplier := 20;
+        win_amt := actual_bet * 20;
+        res_type := 'win';
+    ELSIF rand_val < 10 THEN -- 5% x10
         segment_idx := 5;
         multiplier := 10;
         win_amt := actual_bet * 10;
         res_type := 'win';
-    ELSIF rand_val < 15 THEN -- 9% x2
+    ELSIF rand_val < 18 THEN -- 8% x2 (Segment 6)
         segment_idx := 6;
         multiplier := 2;
         win_amt := actual_bet * 2;
         res_type := 'win';
-    ELSIF rand_val < 30 THEN -- 15% x2
+    ELSIF rand_val < 26 THEN -- 8% x2 (Segment 3) -> Total x2 is 16%
         segment_idx := 3;
         multiplier := 2;
         win_amt := actual_bet * 2;
         res_type := 'win';
-    ELSIF rand_val < 55 THEN -- 25% x0.5
+    ELSIF rand_val < 51 THEN -- 25% x0.5
         segment_idx := 2;
         multiplier := 0.5;
         win_amt := floor(actual_bet * 0.5);
         res_type := 'win';
-    ELSE -- 45% Empty
-        rand_val := floor(random() * 3);
+    ELSE -- 49% ПУСТО (Segments 1, 4)
+        rand_val := floor(random() * 2);
         IF rand_val = 0 THEN segment_idx := 1;
-        ELSIF rand_val = 1 THEN segment_idx := 4;
-        ELSE segment_idx := 7;
+        ELSE segment_idx := 4;
         END IF;
         multiplier := 0;
         win_amt := 0;
