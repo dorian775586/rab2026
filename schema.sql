@@ -370,13 +370,13 @@ BEGIN
         res_type := 'loss';
         
         IF NOT is_free THEN
-            UPDATE globals SET value_int = value_int + actual_bet WHERE key = 'jackpot_fund';
+            UPDATE globals SET value_int = value_int + actual_bet, value = NULL WHERE key = 'jackpot_fund';
         END IF;
     END IF;
 
     -- Если выиграл меньше ставки, разница идет в джекпот
     IF NOT is_free AND win_amt < actual_bet AND res_type != 'jackpot' THEN
-        UPDATE globals SET value_int = value_int + (actual_bet - win_amt) WHERE key = 'jackpot_fund';
+        UPDATE globals SET value_int = value_int + (actual_bet - win_amt), value = NULL WHERE key = 'jackpot_fund';
     END IF;
 
     -- 5. Обновляем пользователя

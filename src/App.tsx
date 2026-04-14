@@ -27,6 +27,7 @@ import {
   Trophy
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import confetti from 'canvas-confetti';
 
 // Types
 interface UserData {
@@ -86,6 +87,7 @@ export default function App() {
   const [bet, setBet] = useState(100);
   const [isSpinning, setIsSpinning] = useState(false);
   const [spinResult, setSpinResult] = useState<{ type: string, win: number } | null>(null);
+  const [vignetteType, setVignetteType] = useState<'loss' | 'win' | 'jackpot' | null>(null);
   const [wheelRotation, setWheelRotation] = useState(0);
 
   const [selectedSlave, setSelectedSlave] = useState<MarketUser | null>(null);
@@ -433,6 +435,33 @@ export default function App() {
           fetchUser();
           fetchGlobals();
           fetchSpinHistory();
+          
+          // Trigger Visual Effects
+          if (data.type === 'jackpot') {
+            setVignetteType('jackpot');
+            confetti({
+              particleCount: 150,
+              spread: 70,
+              origin: { y: 0.6 },
+              colors: ['#fbbf24', '#ffffff', '#f59e0b']
+            });
+          } else if (data.win >= bet * 10) {
+            setVignetteType('jackpot');
+            confetti({
+              particleCount: 100,
+              spread: 60,
+              origin: { y: 0.6 },
+              colors: ['#fbbf24', '#ffffff']
+            });
+          } else if (data.win > 0) {
+            setVignetteType('win');
+          } else {
+            setVignetteType('loss');
+          }
+
+          // Clear vignette after animation
+          setTimeout(() => setVignetteType(null), 2000);
+
           WebApp.HapticFeedback.notificationOccurred(data.win > 0 ? 'success' : 'error');
         }, 3000);
       } else {
@@ -1538,6 +1567,18 @@ export default function App() {
           <NavButton active={activeTab === 'shop'} onClick={() => setActiveTab('shop')} icon={<Store className="w-4 h-4" />} label="Магазин" />
         </nav>
       </div>
+
+      {/* Vignette Overlay */}
+      <AnimatePresence>
+        {vignetteType && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className={`vignette vignette-${vignetteType}`}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
