@@ -30,7 +30,7 @@ import { motion, AnimatePresence } from 'motion/react';
 
 // Types
 interface UserData {
-  telegram_id: number;
+  telegram_id: string | number;
   username: string;
   balance: number;
   current_price: number;
@@ -41,7 +41,7 @@ interface UserData {
   on_market: boolean;
   market_price: number | null;
   market_slots_unlocked: number;
-  owner_id: number | null;
+  owner_id: string | number | null;
   owner?: { username: string };
   last_collect_time: string;
   last_free_spin: string | null;
@@ -51,7 +51,7 @@ interface UserData {
 }
 
 interface MarketUser {
-  telegram_id: number;
+  telegram_id: string | number;
   username: string;
   current_price: number;
   base_income: number;
@@ -61,7 +61,7 @@ interface MarketUser {
 }
 
 interface LeaderboardUser {
-  telegram_id: number;
+  telegram_id: string | number;
   username: string;
   balance: number;
   slaves_count: number;
@@ -92,7 +92,7 @@ export default function App() {
   const [myListings, setMyListings] = useState<any[]>([]);
   const [listingModal, setListingModal] = useState<{ isOpen: boolean, slotIndex: number } | null>(null);
   const [listingPrice, setListingPrice] = useState<string>('');
-  const [listingSlaveId, setListingSlaveId] = useState<number | null>(null);
+  const [listingSlaveId, setListingSlaveId] = useState<string | number | null>(null);
   const [shopModal, setShopModal] = useState<{ type: 'stars' | 'coins' | 'premium', isOpen: boolean } | null>(null);
 
   const botUsername = 'rabygame_bot'; // Обновлено на реальное имя бота
@@ -194,7 +194,7 @@ export default function App() {
     }
   }, [marketSort]);
 
-  const fetchProfile = async (id: number) => {
+  const fetchProfile = async (id: string | number) => {
     try {
       const response = await fetch(`${API_URL}/api/profile/${id}`, {
         headers: { 'x-telegram-init-data': WebApp.initData },
@@ -258,7 +258,7 @@ export default function App() {
     if (activeTab === 'leaderboard') fetchLeaderboard();
   }, [activeTab, fetchSlaves, fetchMyListings, fetchMarket, fetchGlobals, fetchLeaderboard]);
 
-  const handleBuy = async (targetId: number) => {
+  const handleBuy = async (targetId: string | number) => {
     setActionLoading(targetId);
     try {
       const response = await fetch(API_URL + '/api/buy', {
@@ -283,7 +283,7 @@ export default function App() {
     }
   };
 
-  const handleUpgrade = async (targetId: number) => {
+  const handleUpgrade = async (targetId: string | number) => {
     setActionLoading(`upgrade-${targetId}`);
     try {
       const response = await fetch(API_URL + '/api/upgrade', {
@@ -309,7 +309,7 @@ export default function App() {
     }
   };
 
-  const handleSellSlave = async (slaveId: number) => {
+  const handleSellSlave = async (slaveId: string | number) => {
     setActionLoading(`sell-${slaveId}`);
     try {
       const response = await fetch(API_URL + '/api/sell', {
@@ -473,8 +473,7 @@ export default function App() {
           'x-telegram-init-data': WebApp.initData 
         },
         body: JSON.stringify({ 
-          // Убеждаемся, что передаем числа, так как RPC в Supabase ждет BIGINT
-          slaveId: Number(listingSlaveId), 
+          slaveId: String(listingSlaveId), // Передаем как строку для безопасности BigInt
           price: Number(listingPrice) 
         }),
       });
@@ -489,16 +488,19 @@ export default function App() {
         fetchSlaves();
         fetchMyListings();
       } else {
-        WebApp.showAlert(`Сервер: ${data.message || 'Ошибка'}`);
+        // Выводим ошибку от сервера в алерт для теста
+        WebApp.showAlert(`Сервер: ${data.message || data.error || 'Ошибка'}`);
+        console.error("Детали ошибки:", data);
       }
     } catch (err) {
+      console.error('Ошибка сети:', err);
       WebApp.showAlert('Ошибка сети: сервер недоступен');
     } finally {
       setActionLoading(null);
     }
   };
 
-  const handleUnlist = async (slaveId: number) => {
+  const handleUnlist = async (slaveId: string | number) => {
     setActionLoading(`unlist-${slaveId}`);
     try {
       const response = await fetch(API_URL + '/api/market/unlist', {
@@ -507,23 +509,15 @@ export default function App() {
           'Content-Type': 'application/json',
           'x-telegram-init-data': WebApp.initData 
         },
-        body: JSON.stringify({ 
-          // ВАЖНО: Должно быть slaveId, а не targetId или что-то еще
-          slaveId: Number(slaveId) 
-        }),
+        body: JSON.stringify({ slaveId }),
       });
-      
-      const data = await response.json();
-      
-      if (response.ok && data.success) {
+      if (response.ok) {
         WebApp.showAlert('Раб снят с продажи');
         fetchSlaves();
         fetchMyListings();
-      } else {
-        WebApp.showAlert(data.message || 'Ошибка снятия');
       }
     } catch (err) {
-      WebApp.showAlert('Ошибка сети');
+      WebApp.showAlert('Ошибка снятия');
     } finally {
       setActionLoading(null);
     }

@@ -55,13 +55,18 @@ const validateTelegram = (req: express.Request, res: express.Response, next: exp
       if (userStr) {
         (req as any).tgUser = JSON.parse(userStr);
       }
+      
+      if (!(req as any).tgUser) {
+        return res.status(401).json({ success: false, message: "Пользователь не авторизован" });
+      }
+      
       next();
     } else {
       console.error("Invalid Telegram hash. Expected:", hash, "Got:", hmac);
-      res.status(403).json({ error: "Invalid Telegram data" });
+      res.status(403).json({ success: false, message: "Неверные данные Telegram" });
     }
   } catch (err) {
-    res.status(500).json({ error: "Validation failed" });
+    res.status(500).json({ success: false, message: "Ошибка валидации данных" });
   }
 };
 
@@ -73,7 +78,7 @@ app.get("/api/health", (req, res) => {
 // Sync endpoint: Calculate passive income and return user state
 app.post("/api/sync", validateTelegram, async (req, res) => {
   const tgUser = (req as any).tgUser;
-  if (!tgUser) return res.status(400).json({ error: "User not identified" });
+  if (!tgUser) return res.status(400).json({ success: false, message: "Пользователь не идентифицирован" });
 
   const { id, username, photo_url } = tgUser;
   const { referrerId } = req.body;
@@ -86,16 +91,16 @@ app.post("/api/sync", validateTelegram, async (req, res) => {
     let { data: user, error } = await supabase
       .from("users")
       .select("*, owner:owner_id(username)")
-      .eq("telegram_id", Number(id))
+      .eq("telegram_id", BigInt(id).toString())
       .single();
 
     if (error && error.code === "PGRST116") {
       // User doesn't exist, create them
-      let inviterId: number | null = null;
+      let inviterId: string | null = null;
       if (startParam && !isNaN(Number(startParam))) {
-        inviterId = Number(startParam);
+        inviterId = BigInt(startParam).toString();
       } else if (referrerId && !isNaN(Number(referrerId))) {
-        inviterId = Number(referrerId);
+        inviterId = BigInt(referrerId).toString();
       }
 
       // Проверяем, существует ли пригласитель на самом деле
@@ -114,7 +119,7 @@ app.post("/api/sync", validateTelegram, async (req, res) => {
       const { data: newUser, error: createError } = await supabase
         .from("users")
         .insert([{ 
-          telegram_id: Number(id), 
+          telegram_id: BigInt(id).toString(), 
           username: username || `User_${id}`,
           photo_url: photo_url || null,
           owner_id: inviterId,
@@ -146,7 +151,7 @@ app.post("/api/sync", validateTelegram, async (req, res) => {
       const { data: slavesData, error: slavesError } = await supabase
         .from("users")
         .select("base_income")
-        .eq("owner_id", Number(id))
+        .eq("owner_id", BigInt(id).toString())
         .eq("on_market", false);
 
       if (slavesError) throw slavesError;
@@ -160,7 +165,7 @@ app.post("/api/sync", validateTelegram, async (req, res) => {
           balance: user.balance + income,
           last_collect_time: now.toISOString()
         })
-        .eq("telegram_id", Number(id))
+        .eq("telegram_id", BigInt(id).toString())
         .select("*, owner:owner_id(username)")
         .single();
       
@@ -172,7 +177,7 @@ app.post("/api/sync", validateTelegram, async (req, res) => {
     const { data: allSlaves } = await supabase
       .from("users")
       .select("base_income, on_market")
-      .eq("owner_id", Number(id));
+      .eq("owner_id", BigInt(id).toString());
     
     const slavesCount = allSlaves?.length || 0;
     const activeSlavesIncome = (allSlaves || [])
@@ -185,7 +190,7 @@ app.post("/api/sync", validateTelegram, async (req, res) => {
       total_income: user.base_income + activeSlavesIncome
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
@@ -195,8 +200,8 @@ app.post("/api/upgrade", validateTelegram, async (req, res) => {
   const { targetId } = req.body;
   try {
     const { data, error } = await supabase.rpc("upgrade_user", { 
-      buyer_id: Number(tgUser.id),
-      target_id: Number(targetId || tgUser.id) 
+      buyer_id: BigInt(tgUser.id).toString(),
+      target_id: BigInt(targetId || tgUser.id).toString() 
     });
     if (error) throw error;
     
@@ -204,12 +209,12 @@ app.post("/api/upgrade", validateTelegram, async (req, res) => {
     const { data: updatedUser } = await supabase
       .from("users")
       .select("*, owner:owner_id(username)")
-      .eq("telegram_id", Number(tgUser.id))
+      .eq("telegram_id", BigInt(tgUser.id).toString())
       .single();
 
     res.json({ ...data, user: updatedUser });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
@@ -217,19 +222,22 @@ app.post("/api/sell", validateTelegram, async (req, res) => {
   const tgUser = (req as any).tgUser;
   const { slaveId } = req.body;
   try {
-    const { data, error } = await supabase.rpc("sell_slave", { owner_id: Number(tgUser.id), slave_id: Number(slaveId) });
+    const { data, error } = await supabase.rpc("sell_slave", { 
+      owner_id: BigInt(tgUser.id).toString(), 
+      slave_id: BigInt(slaveId).toString() 
+    });
     if (error) throw error;
     
     // Fetch updated user
     const { data: updatedUser } = await supabase
       .from("users")
       .select("*, owner:owner_id(username)")
-      .eq("telegram_id", Number(tgUser.id))
+      .eq("telegram_id", BigInt(tgUser.id).toString())
       .single();
       
     res.json({ ...data, user: updatedUser });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
@@ -241,7 +249,7 @@ app.post("/api/spin", validateTelegram, async (req, res) => {
   
   try {
     const { data, error } = await supabase.rpc("spin_roulette", { 
-      user_id_param: Number(tgUser.id), 
+      user_id_param: BigInt(tgUser.id).toString(), 
       bet_param: Number(bet || 0),
       is_free: !!isFree 
     });
@@ -268,7 +276,7 @@ app.post("/api/spin", validateTelegram, async (req, res) => {
     res.json(result);
   } catch (err: any) {
     console.error("Spin endpoint error:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
@@ -294,14 +302,14 @@ app.get("/api/globals", async (req, res) => {
     
     res.json(globals);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
 app.post("/api/buy-ghost-short", validateTelegram, async (req, res) => {
   const tgUser = (req as any).tgUser;
   try {
-    const { data: user } = await supabase.from("users").select("balance, base_income").eq("telegram_id", Number(tgUser.id)).single();
+    const { data: user } = await supabase.from("users").select("balance, base_income").eq("telegram_id", BigInt(tgUser.id).toString()).single();
     const cost = (user?.base_income || 0) * 20;
     
     if ((user?.balance || 0) < cost) {
@@ -315,12 +323,12 @@ app.post("/api/buy-ghost-short", validateTelegram, async (req, res) => {
         balance: (user?.balance || 0) - cost,
         ghost_until: ghostUntil 
       })
-      .eq("telegram_id", Number(tgUser.id));
+      .eq("telegram_id", BigInt(tgUser.id).toString());
     
     if (error) throw error;
     res.json({ success: true, ghost_until: ghostUntil });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 app.post("/api/buy-ghost", validateTelegram, async (req, res) => {
@@ -330,11 +338,11 @@ app.post("/api/buy-ghost", validateTelegram, async (req, res) => {
     const { error } = await supabase
       .from("users")
       .update({ ghost_until: ghostUntil })
-      .eq("telegram_id", Number(tgUser.id));
+      .eq("telegram_id", BigInt(tgUser.id).toString());
     if (error) throw error;
     res.json({ success: true, ghost_until: ghostUntil });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
@@ -342,15 +350,15 @@ app.post("/api/buy-coins", validateTelegram, async (req, res) => {
   const tgUser = (req as any).tgUser;
   const { amount } = req.body;
   try {
-    const { data: user } = await supabase.from("users").select("balance").eq("telegram_id", Number(tgUser.id)).single();
+    const { data: user } = await supabase.from("users").select("balance").eq("telegram_id", BigInt(tgUser.id).toString()).single();
     const { error } = await supabase
       .from("users")
       .update({ balance: (user?.balance || 0) + amount })
-      .eq("telegram_id", Number(tgUser.id));
+      .eq("telegram_id", BigInt(tgUser.id).toString());
     if (error) throw error;
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
@@ -359,12 +367,12 @@ app.post("/api/buy", validateTelegram, async (req, res) => {
   const tgUser = (req as any).tgUser;
   const { targetId } = req.body;
 
-  if (!tgUser || !targetId) return res.status(400).json({ error: "Invalid request" });
+  if (!tgUser || !targetId) return res.status(400).json({ success: false, message: "Неверный запрос" });
 
   try {
     const { data, error } = await supabase.rpc("purchase_user", {
-      buyer_id: Number(tgUser.id),
-      target_id: Number(targetId)
+      buyer_id: BigInt(tgUser.id).toString(),
+      target_id: BigInt(targetId).toString()
     });
 
     if (error) throw error;
@@ -374,14 +382,14 @@ app.post("/api/buy", validateTelegram, async (req, res) => {
       const { data: updatedUser } = await supabase
         .from("users")
         .select("*, owner:owner_id(username)")
-        .eq("telegram_id", Number(tgUser.id))
+        .eq("telegram_id", BigInt(tgUser.id).toString())
         .single();
       res.json({ ...data, user: updatedUser });
     } else {
       res.status(400).json(data);
     }
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
@@ -401,7 +409,7 @@ app.get("/api/market", validateTelegram, async (req, res) => {
     if (error) throw error;
     res.json(data);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
@@ -410,14 +418,15 @@ app.post("/api/market/list", validateTelegram, async (req, res) => {
   const { slaveId, price } = req.body;
   try {
     const { data, error } = await supabase.rpc("list_on_market", {
-      seller_id: Number(tgUser.id),
-      slave_id: Number(slaveId),
+      seller_id: BigInt(tgUser.id).toString(),
+      slave_id: BigInt(slaveId).toString(),
       price: Number(price)
     });
     if (error) throw error;
     res.json(data);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    console.error("Market list error:", err);
+    res.status(500).json({ success: false, message: err.message || "Ошибка сервера" });
   }
 });
 
@@ -426,13 +435,13 @@ app.post("/api/market/buy", validateTelegram, async (req, res) => {
   const { slaveId } = req.body;
   try {
     const { data, error } = await supabase.rpc("buy_from_market", {
-      buyer_id: Number(tgUser.id),
-      slave_id: Number(slaveId)
+      buyer_id: BigInt(tgUser.id).toString(),
+      slave_id: BigInt(slaveId).toString()
     });
     if (error) throw error;
     res.json(data);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
@@ -441,13 +450,13 @@ app.post("/api/market/unlist", validateTelegram, async (req, res) => {
   const { slaveId } = req.body;
   try {
     const { data, error } = await supabase.rpc("unlist_from_market", {
-      seller_id: Number(tgUser.id),
-      slave_id: Number(slaveId)
+      seller_id: BigInt(tgUser.id).toString(),
+      slave_id: BigInt(slaveId).toString()
     });
     if (error) throw error;
     res.json(data);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
@@ -457,16 +466,16 @@ app.get("/api/market/my-listings", validateTelegram, async (req, res) => {
     const { data, error } = await supabase
       .from("market_listings")
       .select("*, slave:slave_id(telegram_id, username, current_price, base_income, level)")
-      .eq("seller_id", Number(tgUser.id));
+      .eq("seller_id", BigInt(tgUser.id).toString());
     if (error) throw error;
     res.json(data);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
 app.get("/api/profile/:id", async (req, res) => {
-  const targetId = Number(req.params.id);
+  const targetId = BigInt(req.params.id).toString();
   
   try {
     const { data: user, error: userError } = await supabase
@@ -486,7 +495,7 @@ app.get("/api/profile/:id", async (req, res) => {
 
     res.json({ ...user, slaves });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
@@ -496,11 +505,11 @@ app.post("/api/buy-premium", validateTelegram, async (req, res) => {
     const { error } = await supabase
       .from("users")
       .update({ no_commission: true })
-      .eq("telegram_id", Number(tgUser.id));
+      .eq("telegram_id", BigInt(tgUser.id).toString());
     if (error) throw error;
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
@@ -511,7 +520,7 @@ app.post("/api/buy-slot", validateTelegram, async (req, res) => {
     const { data: user, error: fetchError } = await supabase
       .from("users")
       .select("market_slots_unlocked, balance")
-      .eq("telegram_id", Number(tgUser.id))
+      .eq("telegram_id", BigInt(tgUser.id).toString())
       .single();
     
     if (fetchError) throw fetchError;
@@ -528,7 +537,7 @@ app.post("/api/buy-slot", validateTelegram, async (req, res) => {
         market_slots_unlocked: user.market_slots_unlocked + 1,
         balance: user.balance - 1000
       })
-      .eq("telegram_id", Number(tgUser.id));
+      .eq("telegram_id", BigInt(tgUser.id).toString());
     
     if (updateError) throw updateError;
 
@@ -536,12 +545,12 @@ app.post("/api/buy-slot", validateTelegram, async (req, res) => {
     const { data: updatedUser } = await supabase
       .from("users")
       .select("*, owner:owner_id(username)")
-      .eq("telegram_id", Number(tgUser.id))
+      .eq("telegram_id", BigInt(tgUser.id).toString())
       .single();
 
     res.json({ success: true, user: updatedUser });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
@@ -551,12 +560,12 @@ app.get("/api/slaves", validateTelegram, async (req, res) => {
     const { data, error } = await supabase
       .from("users")
       .select("telegram_id, username, current_price, base_income, level, on_market")
-      .eq("owner_id", Number(tgUser.id));
+      .eq("owner_id", BigInt(tgUser.id).toString());
     
     if (error) throw error;
     res.json(data);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
@@ -591,7 +600,7 @@ app.get("/api/leaderboard", validateTelegram, async (req, res) => {
     }
     res.json(data);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
