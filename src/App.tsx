@@ -401,10 +401,6 @@ export default function App() {
     setIsSpinning(true);
     setSpinResult(null);
     
-    // Start initial slow rotation
-    const minFullTurns = 5;
-    const baseRotation = wheelRotation + (minFullTurns * 360);
-    
     try {
       const response = await fetch(API_URL + '/api/spin', {
         method: 'POST',
@@ -419,9 +415,15 @@ export default function App() {
       if (response.ok && data.success) {
         const segment = data.segment !== undefined ? data.segment : 1;
         
-        // Calculate target rotation to land exactly on the segment
-        const segmentOffset = (segment * 45) + 22.5;
-        const targetRotation = baseRotation + (360 - (segmentOffset % 360));
+        // Target angle for the segment (middle of it)
+        // Segment 0 is at 0-45 deg. To bring it to top, we rotate by 360 - 22.5
+        const targetAngle = 360 - (segment * 45 + 22.5);
+        
+        // Calculate new total rotation
+        // We want at least 5 full turns (1800 deg)
+        const currentRotation = wheelRotation;
+        const minRotation = currentRotation + 1800;
+        const targetRotation = Math.ceil(minRotation / 360) * 360 + targetAngle;
         
         setWheelRotation(targetRotation);
 
@@ -1296,10 +1298,38 @@ export default function App() {
               )}
 
               <div className="w-full space-y-4">
-                <div className="flex items-center justify-center gap-4">
-                  <button onClick={() => setBet(Math.max(10, bet - 100))} className="w-12 h-12 rounded-2xl bg-black/10 border border-white/10 flex items-center justify-center font-black text-xl">-</button>
-                  <div className="glass-card px-8 py-3 font-black text-2xl w-40 text-center border-crypto-gold/30">{bet.toLocaleString()}</div>
-                  <button onClick={() => setBet(Math.min(100000, bet + 100))} className="w-12 h-12 rounded-2xl bg-black/10 border border-white/10 flex items-center justify-center font-black text-xl">+</button>
+                <div className="flex flex-col items-center gap-3">
+                  <div className="flex items-center justify-center gap-4 w-full">
+                    <button onClick={() => setBet(Math.max(10, bet - 100))} className="w-12 h-12 rounded-2xl bg-black/10 border border-white/10 flex items-center justify-center font-black text-xl active:scale-90 transition-transform">-</button>
+                    <div className="relative w-48">
+                      <input 
+                        type="number"
+                        value={bet}
+                        onChange={(e) => setBet(Math.max(0, parseInt(e.target.value) || 0))}
+                        className="glass-card px-4 py-3 font-black text-2xl w-full text-center border-crypto-gold/30 bg-transparent focus:outline-none focus:border-crypto-gold transition-colors"
+                      />
+                      <div className="absolute -top-2 left-1/2 -translate-x-1/2 bg-black px-2 text-[8px] font-black text-crypto-gold uppercase tracking-widest border border-crypto-gold/30">ВАША СТАВКА</div>
+                    </div>
+                    <button onClick={() => setBet(bet + 100)} className="w-12 h-12 rounded-2xl bg-black/10 border border-white/10 flex items-center justify-center font-black text-xl active:scale-90 transition-transform">+</button>
+                  </div>
+                  
+                  <div className="flex flex-wrap justify-center gap-2">
+                    {[100, 500, 1000, 5000, 10000].map(amount => (
+                      <button 
+                        key={amount}
+                        onClick={() => setBet(bet + amount)}
+                        className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-[10px] font-black hover:bg-white/10 active:scale-95 transition-all"
+                      >
+                        +{amount.toLocaleString()}
+                      </button>
+                    ))}
+                    <button 
+                      onClick={() => setBet(user?.balance || 0)}
+                      className="px-3 py-1.5 rounded-lg bg-crypto-gold/10 border border-crypto-gold/30 text-[10px] font-black text-crypto-gold hover:bg-crypto-gold/20 active:scale-95 transition-all"
+                    >
+                      MAX
+                    </button>
+                  </div>
                 </div>
 
                 <button 
