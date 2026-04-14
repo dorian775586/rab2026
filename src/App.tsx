@@ -473,7 +473,8 @@ export default function App() {
           'x-telegram-init-data': WebApp.initData 
         },
         body: JSON.stringify({ 
-          slaveId: String(listingSlaveId), // Передаем как строку для безопасности BigInt
+          // Убеждаемся, что передаем числа, так как RPC в Supabase ждет BIGINT
+          slaveId: Number(listingSlaveId), 
           price: Number(listingPrice) 
         }),
       });
@@ -488,12 +489,9 @@ export default function App() {
         fetchSlaves();
         fetchMyListings();
       } else {
-        // Выводим ошибку от сервера в алерт для теста
         WebApp.showAlert(`Сервер: ${data.message || 'Ошибка'}`);
-        console.error("Детали ошибки:", data);
       }
     } catch (err) {
-      console.error('Ошибка сети:', err);
       WebApp.showAlert('Ошибка сети: сервер недоступен');
     } finally {
       setActionLoading(null);
@@ -509,15 +507,23 @@ export default function App() {
           'Content-Type': 'application/json',
           'x-telegram-init-data': WebApp.initData 
         },
-        body: JSON.stringify({ slaveId }),
+        body: JSON.stringify({ 
+          // ВАЖНО: Должно быть slaveId, а не targetId или что-то еще
+          slaveId: Number(slaveId) 
+        }),
       });
-      if (response.ok) {
+      
+      const data = await response.json();
+      
+      if (response.ok && data.success) {
         WebApp.showAlert('Раб снят с продажи');
         fetchSlaves();
         fetchMyListings();
+      } else {
+        WebApp.showAlert(data.message || 'Ошибка снятия');
       }
     } catch (err) {
-      WebApp.showAlert('Ошибка снятия');
+      WebApp.showAlert('Ошибка сети');
     } finally {
       setActionLoading(null);
     }
