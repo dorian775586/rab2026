@@ -77,6 +77,7 @@ export default function App() {
   const [slaves, setSlaves] = useState<MarketUser[]>([]);
   const [market, setMarket] = useState<MarketUser[]>([]);
   const [globals, setGlobals] = useState<{ jackpot_fund: number }>({ jackpot_fund: 10000 });
+  const [spinHistory, setSpinHistory] = useState<any[]>([]);
   const [leaderboard, setLeaderboard] = useState<LeaderboardUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<number | string | null>(null);
@@ -240,6 +241,16 @@ export default function App() {
     }
   }, []);
 
+  const fetchSpinHistory = useCallback(async () => {
+    try {
+      const response = await fetch(API_URL + '/api/spin-history');
+      const data = await response.json();
+      if (response.ok) setSpinHistory(data);
+    } catch (err) {
+      console.error('Fetch spin history error:', err);
+    }
+  }, []);
+
   useEffect(() => {
     WebApp.ready();
     WebApp.expand();
@@ -254,9 +265,12 @@ export default function App() {
       fetchMyListings();
     }
     if (activeTab === 'market') fetchMarket();
-    if (activeTab === 'games') fetchGlobals();
+    if (activeTab === 'games') {
+      fetchGlobals();
+      fetchSpinHistory();
+    }
     if (activeTab === 'leaderboard') fetchLeaderboard();
-  }, [activeTab, fetchSlaves, fetchMyListings, fetchMarket, fetchGlobals, fetchLeaderboard]);
+  }, [activeTab, fetchSlaves, fetchMyListings, fetchMarket, fetchGlobals, fetchLeaderboard, fetchSpinHistory]);
 
   const handleBuy = async (targetId: string | number) => {
     if (targetId.toString() === user?.telegram_id.toString()) {
@@ -388,7 +402,8 @@ export default function App() {
     setSpinResult(null);
     
     // Start initial slow rotation
-    const baseRotation = wheelRotation + 1440; // 4 full turns minimum
+    const minFullTurns = 5;
+    const baseRotation = wheelRotation + (minFullTurns * 360);
     
     try {
       const response = await fetch(API_URL + '/api/spin', {
@@ -404,8 +419,10 @@ export default function App() {
       if (response.ok && data.success) {
         const segment = data.segment !== undefined ? data.segment : 1;
         
-        // Add 22.5 degree offset to land in the middle of the 45 degree segment
-        const targetRotation = baseRotation + (360 - (segment * 45)) - 22.5;
+        // Calculate target rotation to land exactly on the segment
+        const segmentOffset = (segment * 45) + 22.5;
+        const targetRotation = baseRotation + (360 - (segmentOffset % 360));
+        
         setWheelRotation(targetRotation);
 
         setTimeout(() => {
@@ -413,6 +430,7 @@ export default function App() {
           setSpinResult(data);
           fetchUser();
           fetchGlobals();
+          fetchSpinHistory();
           WebApp.HapticFeedback.notificationOccurred(data.win > 0 ? 'success' : 'error');
         }, 3000);
       } else {
@@ -1162,12 +1180,35 @@ export default function App() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
-              className="space-y-6 flex flex-col items-center"
+              className="space-y-6 flex flex-col items-center pb-24"
             >
               <div className="w-full glass-card p-4 flex flex-col items-center justify-center bg-gradient-to-b from-crypto-gold/20 to-transparent border-crypto-gold/30 shadow-[0_0_30px_rgba(251,191,36,0.1)]">
                 <span className="text-[10px] text-crypto-gold font-black uppercase tracking-[0.3em] mb-1">JACKPOT FUND</span>
                 <div className="text-4xl font-black text-crypto-gold drop-shadow-[0_0_15px_rgba(251,191,36,0.5)]">
                   {globals.jackpot_fund.toLocaleString()}
+                </div>
+              </div>
+
+              {/* Live Feed */}
+              <div className="w-full glass-card p-3 bg-black/20 border-white/5 overflow-hidden">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Live Feed</span>
+                </div>
+                <div className="space-y-1 h-20 overflow-y-auto custom-scrollbar">
+                  {spinHistory.length > 0 ? spinHistory.map((h, i) => (
+                    <div key={i} className="text-[10px] flex justify-between items-center py-1 border-b border-white/5 last:border-0">
+                      <span className="text-slate-400 font-bold truncate max-w-[100px]">{h.username}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-slate-500">Ставка: {h.bet}</span>
+                        <span className={h.win > 0 ? 'text-crypto-emerald font-black' : 'text-red-400'}>
+                          {h.type === 'jackpot' ? 'JACKPOT!' : h.win > 0 ? `+${h.win}` : 'Loss'}
+                        </span>
+                      </div>
+                    </div>
+                  )) : (
+                    <div className="text-[10px] text-slate-600 text-center py-4 italic">Ожидание ставок...</div>
+                  )}
                 </div>
               </div>
 
@@ -1179,11 +1220,11 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="relative w-64 h-64">
+                <div className="relative w-80 h-80">
                   <motion.div 
                     animate={{ rotate: wheelRotation }}
                     transition={{ duration: 3, ease: [0.15, 0, 0.15, 1] }}
-                    className="w-full h-full rounded-full border-[8px] border-white/10 relative overflow-hidden shadow-[0_0_50px_rgba(251,191,36,0.2)]"
+                    className="w-full h-full rounded-full border-[10px] border-white/10 relative overflow-hidden shadow-[0_0_60px_rgba(251,191,36,0.2)]"
                   >
                     <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
                       {/* 8 segments of 45 degrees */}
@@ -1227,8 +1268,8 @@ export default function App() {
                       })}
                     </svg>
                     <div className="absolute inset-0 flex items-center justify-center">
-                      <div className="w-12 h-12 rounded-full bg-black/40 backdrop-blur-md border-2 border-white/20 flex items-center justify-center shadow-inner">
-                        <Dices className={`w-6 h-6 text-white ${isSpinning ? 'animate-bounce' : ''}`} />
+                      <div className="w-14 h-14 rounded-full bg-black/40 backdrop-blur-md border-2 border-white/20 flex items-center justify-center shadow-inner">
+                        <Dices className={`w-7 h-7 text-white ${isSpinning ? 'animate-bounce' : ''}`} />
                       </div>
                     </div>
                   </motion.div>
@@ -1275,8 +1316,7 @@ export default function App() {
                 <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-xs font-bold">
                   <div className="flex justify-between border-b border-white/5 pb-1"><span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-[#475569]" /> ПУСТО</span><span className="text-slate-500">45%</span></div>
                   <div className="flex justify-between border-b border-white/5 pb-1"><span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-[#3B82F6]" /> x0.5</span><span className="text-slate-500">25%</span></div>
-                  <div className="flex justify-between border-b border-white/5 pb-1"><span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-[#10B981]" /> x2</span><span className="text-crypto-gold">15%</span></div>
-                  <div className="flex justify-between border-b border-white/5 pb-1"><span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-[#8B5CF6]" /> БОНУС x2</span><span className="text-crypto-gold">9%</span></div>
+                  <div className="flex justify-between border-b border-white/5 pb-1"><span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-[#10B981]" /> x2 (x2)</span><span className="text-crypto-gold">24%</span></div>
                   <div className="flex justify-between border-b border-white/5 pb-1"><span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-[#F59E0B]" /> x10</span><span className="text-crypto-gold">5%</span></div>
                   <div className="flex justify-between border-b border-white/5 pb-1"><span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-[#FFD700]" /> JACKPOT</span><span className="text-crypto-emerald">1%</span></div>
                 </div>

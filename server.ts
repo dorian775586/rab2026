@@ -284,6 +284,20 @@ app.post("/api/spin", validateTelegram, async (req, res) => {
   }
 });
 
+app.get("/api/spin-history", async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from("spin_history")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(10);
+    if (error) throw error;
+    res.json(data);
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 app.get("/api/globals", async (req, res) => {
   try {
     const { data, error } = await supabase.from("globals").select("*");
