@@ -320,7 +320,7 @@ BEGIN
         segment_idx := 5;
         multiplier := 10;
         win_amt := actual_bet * 10;
-    ELSIF rand_val < 15 THEN -- 9% Bonus x2
+    ELSIF rand_val < 15 THEN -- 9% x2 (Previously Bonus)
         segment_idx := 6;
         multiplier := 2;
         win_amt := actual_bet * 2;
@@ -366,9 +366,8 @@ BEGIN
             WHEN segment_idx = 0 THEN 'jackpot'
             WHEN segment_idx IN (1, 4, 7) THEN 'empty'
             WHEN segment_idx = 2 THEN 'x0.5'
-            WHEN segment_idx = 3 THEN 'x2'
+            WHEN segment_idx IN (3, 6) THEN 'x2'
             WHEN segment_idx = 5 THEN 'x10'
-            WHEN segment_idx = 6 THEN 'bonus'
             ELSE 'empty'
         END
     );

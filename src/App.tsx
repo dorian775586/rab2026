@@ -357,7 +357,8 @@ export default function App() {
       if (response.ok && data.success) {
         const segment = data.segment !== undefined ? data.segment : 1;
         
-        const targetRotation = baseRotation + (360 - (segment * 45));
+        // Add 22.5 degree offset to land in the middle of the 45 degree segment
+        const targetRotation = baseRotation + (360 - (segment * 45)) - 22.5;
         setWheelRotation(targetRotation);
 
         setTimeout(() => {
@@ -1111,7 +1112,7 @@ export default function App() {
                         { color: '#10B981', label: 'x2' },      // 3
                         { color: '#475569', label: 'EMPTY' },   // 4
                         { color: '#F59E0B', label: 'x10' },     // 5
-                        { color: '#8B5CF6', label: 'BONUS' },   // 6
+                        { color: '#10B981', label: 'x2' },      // 6
                         { color: '#475569', label: 'EMPTY' },   // 7
                       ].map((seg, i) => {
                         const startAngle = i * 45;
