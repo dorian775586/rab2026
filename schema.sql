@@ -101,6 +101,14 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Add personal_income column if it doesn't exist
+DO $$ 
+BEGIN 
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='personal_income') THEN
+        ALTER TABLE users ADD COLUMN personal_income BIGINT DEFAULT 1;
+    END IF;
+END $$;
+
 -- RPC for upgrading user level (Buyer pays for Target)
 CREATE OR REPLACE FUNCTION upgrade_user(
     buyer_id BIGINT,
@@ -124,7 +132,7 @@ BEGIN
     -- Deduct from buyer
     UPDATE users SET balance = balance - cost WHERE telegram_id = buyer_id;
 
-    -- Upgrade target
+    -- Upgrade target (base_income is income for owner)
     UPDATE users 
     SET level = level + 1,
         base_income = floor(base_income * 1.5) + 2,

@@ -1017,15 +1017,18 @@ export default function App() {
                         <div className="text-[10px] text-slate-500 dark:text-slate-400 font-bold">Уровень {listing.slave.level}</div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-4">
-                      <div className="text-right">
-                        <div className="text-sm font-black text-amber-600 dark:text-crypto-gold">{listing.price.toLocaleString()}</div>
-                        <div className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase leading-none">Цена</div>
+                    <div className="flex items-center gap-6">
+                      <div className="flex flex-col items-end justify-center">
+                        <div className="flex items-center gap-1">
+                          <span className="text-base font-black text-amber-600 dark:text-crypto-gold">{listing.price.toLocaleString()}</span>
+                          <Coins className="w-3 h-3 text-crypto-gold" />
+                        </div>
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-tighter">Цена</span>
                       </div>
                       <button 
                         onClick={() => handleBuy(listing.slave.telegram_id)}
                         disabled={actionLoading === listing.slave.telegram_id || (user?.balance || 0) < listing.price}
-                        className="emerald-button"
+                        className="emerald-button min-w-[80px] py-2.5 text-xs font-black"
                       >
                         КУПИТЬ
                       </button>

@@ -156,7 +156,7 @@ app.post("/api/sync", validateTelegram, async (req, res) => {
       if (slavesError) throw slavesError;
 
       const slavesIncome = (slavesData || []).reduce((acc, s) => acc + (s.base_income || 0), 0);
-      const income = diffMins * (user.base_income + slavesIncome);
+      const income = diffMins * ((user.personal_income || 1) + slavesIncome);
       
       const { data: updatedUser, error: updateError } = await supabase
         .from("users")
@@ -179,14 +179,12 @@ app.post("/api/sync", validateTelegram, async (req, res) => {
       .eq("owner_id", BigInt(id).toString());
     
     const slavesCount = allSlaves?.length || 0;
-    const activeSlavesIncome = (allSlaves || [])
-      .filter(s => !s.on_market)
-      .reduce((acc, s) => acc + (s.base_income || 0), 0);
+    const totalSlavesIncome = (allSlaves || []).reduce((acc, s) => acc + (s.base_income || 0), 0);
 
     res.json({ 
       ...user, 
       slaves_count: slavesCount,
-      total_income: user.base_income + activeSlavesIncome
+      total_income: (user.personal_income || 1) + totalSlavesIncome
     });
   } catch (err: any) {
     res.status(500).json({ success: false, message: err.message });
