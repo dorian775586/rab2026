@@ -764,7 +764,7 @@ export default function App() {
                     {[...Array(20)].map((_, i) => {
                       const listing = myListings[i];
                       const isUnlocked = i < (user?.market_slots_unlocked || 1);
-                      const slotPrice = i === 1 ? '1000 монет' : i > 1 ? `${25 + (i-2)*25} Stars` : 'Бесплатно';
+                      const slotPrice = i === 1 ? (isUnlocked ? 'Разблокировано' : '1000 монет') : i > 1 ? (isUnlocked ? 'Разблокировано' : `${25 + (i-2)*25} Stars`) : 'Бесплатно';
                       
                       return (
                         <div 
@@ -787,7 +787,7 @@ export default function App() {
                               WebApp.showAlert(`Этот слот заблокирован. Разблокируйте его в магазине за Stars!`);
                             }
                           }}
-                          className={`glass-card p-4 h-32 flex flex-col items-center justify-center border-dashed border-2 transition-all ${listing ? 'border-crypto-gold/30 bg-crypto-gold/5' : !isUnlocked ? 'border-white/5 opacity-50' : 'border-white/5 hover:border-white/20 cursor-pointer'}`}
+                          className={`glass-card p-4 h-32 flex flex-col items-center justify-center border-dashed border-2 transition-all ${listing ? 'border-crypto-gold/30 bg-crypto-gold/5' : !isUnlocked ? 'border-black/5 dark:border-white/5 opacity-50' : 'border-black/5 dark:border-white/5 hover:border-crypto-gold/40 cursor-pointer'}`}
                         >
                           {listing ? (
                             <div className="w-full h-full flex flex-col items-center justify-center text-center">
@@ -829,7 +829,15 @@ export default function App() {
                       animate={{ scale: 1, y: 0 }}
                       className="w-full max-w-sm glass-card p-8 space-y-6 border-white/10"
                     >
-                      <h3 className="text-xl font-black text-center">Выставить на рынок</h3>
+                      <div className="flex justify-between items-center mb-6">
+                        <h3 className="text-xl font-black">Выставить на рынок</h3>
+                        <button 
+                          onClick={() => setListingModal(null)}
+                          className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center font-bold"
+                        >
+                          ✕
+                        </button>
+                      </div>
                       
                       <div className="space-y-4">
                         <div>
@@ -839,7 +847,7 @@ export default function App() {
                               <button
                                 key={slave.telegram_id}
                                 onClick={() => setListingSlaveId(slave.telegram_id)}
-                                className={`p-3 rounded-xl border text-left transition-all ${listingSlaveId === slave.telegram_id ? 'bg-crypto-gold text-black border-crypto-gold' : 'bg-white/5 border-white/10 text-white'}`}
+                                className={`p-3 rounded-xl border text-left transition-all ${listingSlaveId === slave.telegram_id ? 'bg-crypto-gold text-black border-crypto-gold' : 'bg-black/5 dark:bg-white/5 border-black/10 dark:border-white/10 text-slate-900 dark:text-white'}`}
                               >
                                 <div className="font-bold text-sm">{slave.username}</div>
                                 <div className="text-[9px] opacity-70">Стоимость: {slave.current_price.toLocaleString()}</div>
@@ -858,7 +866,7 @@ export default function App() {
                             placeholder="Введите цену..."
                             value={listingPrice}
                             onChange={(e) => setListingPrice(e.target.value)}
-                            className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 text-sm font-bold focus:outline-none focus:border-crypto-gold/50"
+                            className="w-full bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-xl py-3 px-4 text-sm font-bold text-slate-900 dark:text-white focus:outline-none focus:border-crypto-gold/50"
                           />
                         </div>
                       </div>
