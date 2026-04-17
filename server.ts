@@ -19,6 +19,71 @@ const supabaseUrl = process.env.SUPABASE_URL || "";
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 const supabase = createClient(supabaseUrl, supabaseKey);
 
+// Shop Items Data
+const SHOP_ITEMS: Record<string, Record<string, { price: number, title: string, desc: string }>> = {
+  coins: {
+    handful: { price: 50, title: "Пакет «Горсть»", desc: "5,000 монет" },
+    bag: { price: 350, title: "Пакет «Мешок»", desc: "50,000 монет" },
+    treasury: { price: 1000, title: "Пакет «Казна»", desc: "200,000 монет" }
+  },
+  manager: {
+    brigadier: { price: 100, title: "Бригадир", desc: "+10% к доходу" },
+    smm: { price: 250, title: "SMM-щик", desc: "+25% к доходу" },
+    top_manager: { price: 600, title: "Топ-Менеджер", desc: "+60% к доходу" },
+    oligarch: { price: 1500, title: "Олигарх", desc: "+150% к доходу" }
+  },
+  potion: {
+    rage: { price: 100, title: "Зелье Ярости", desc: "+50% дохода на 24ч" },
+    stealth: { price: 150, title: "Стелс-эликсир", desc: "Профиль скрыт на 12ч" }
+  },
+  extra: {
+    rainbow: { price: 777, title: "Радужный ник", desc: "Вечный эффект" }
+  }
+};
+
+async function applyShopReward(userId: string, itemType: string, itemId: string) {
+  const { data: user, error: fetchError } = await supabase
+    .from("users")
+    .select("*")
+    .eq("telegram_id", userId)
+    .single();
+
+  if (fetchError) throw fetchError;
+
+  let updateData: any = {};
+
+  if (itemType === 'coins') {
+    const coinPackages: Record<string, number> = {
+      'handful': 5000,
+      'bag': 50000,
+      'treasury': 200000
+    };
+    const amount = coinPackages[itemId];
+    if (amount) {
+      updateData.balance = (user.balance || 0) + amount;
+    }
+  } else if (itemType === 'manager') {
+    const managers = user.managers || {};
+    managers[itemId] = (managers[itemId] || 0) + 1;
+    updateData.managers = managers;
+  } else if (itemType === 'potion') {
+    const potions = user.active_potions || {};
+    const duration = itemId === 'rage' ? 24 : 12;
+    const expiry = new Date(Date.now() + duration * 60 * 60 * 1000).toISOString();
+    potions[itemId] = expiry;
+    updateData.active_potions = potions;
+  } else if (itemType === 'extra' && itemId === 'rainbow') {
+    updateData.has_rainbow_name = true;
+  }
+
+  const { error: updateError } = await supabase
+    .from("users")
+    .update(updateData)
+    .eq("telegram_id", userId);
+
+  if (updateError) throw updateError;
+}
+
 async function getFullUser(telegramId: string) {
   const { data: user, error } = await supabase
     .from("users")
@@ -456,52 +521,82 @@ app.post("/api/shop/buy", validateTelegram, async (req, res) => {
   const { itemType, itemId } = req.body;
 
   try {
-    const { data: user, error: fetchError } = await supabase
-      .from("users")
-      .select("*")
-      .eq("telegram_id", BigInt(tgUser.id).toString())
-      .single();
-
-    if (fetchError) throw fetchError;
-
-    let updateData: any = {};
-
-    if (itemType === 'coins') {
-      const coinPackages: Record<string, number> = {
-        'handful': 5000,
-        'bag': 50000,
-        'treasury': 200000
-      };
-      const amount = coinPackages[itemId];
-      if (amount) {
-        updateData.balance = (user.balance || 0) + amount;
-      }
-    } else if (itemType === 'manager') {
-      const managers = user.managers || {};
-      managers[itemId] = (managers[itemId] || 0) + 1;
-      updateData.managers = managers;
-    } else if (itemType === 'potion') {
-      const potions = user.active_potions || {};
-      const duration = itemId === 'rage' ? 24 : 12;
-      const expiry = new Date(Date.now() + duration * 60 * 60 * 1000).toISOString();
-      potions[itemId] = expiry;
-      updateData.active_potions = potions;
-    } else if (itemType === 'extra' && itemId === 'rainbow') {
-      updateData.has_rainbow_name = true;
-    }
-
-    const { error: updateError } = await supabase
-      .from("users")
-      .update(updateData)
-      .eq("telegram_id", BigInt(tgUser.id).toString());
-
-    if (updateError) throw updateError;
-
+    await applyShopReward(BigInt(tgUser.id).toString(), itemType, itemId);
     const updatedUser = await getFullUser(BigInt(tgUser.id).toString());
     res.json({ success: true, user: updatedUser });
   } catch (err: any) {
     res.status(500).json({ success: false, message: err.message });
   }
+});
+
+// Telegram Stars Payment Endpoints
+app.post("/api/create-stars-invoice", validateTelegram, async (req, res) => {
+  const tgUser = (req as any).tgUser;
+  const { itemId, itemType } = req.body; 
+
+  const item = SHOP_ITEMS[itemType]?.[itemId];
+  if (!item) {
+    return res.status(400).json({ success: false, message: "Товар не найден" });
+  }
+
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/createInvoiceLink`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: item.title,
+        description: item.desc,
+        payload: JSON.stringify({ userId: BigInt(tgUser.id).toString(), itemType, itemId }),
+        currency: "XTR",
+        prices: [{ label: "Звёзды", amount: item.price }],
+        provider_token: "" 
+      }),
+    });
+
+    const result = await response.json();
+    if (result.ok) {
+      res.json({ success: true, link: result.result });
+    } else {
+      res.status(400).json({ success: false, message: result.description });
+    }
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+app.post("/api/webhook/telegram", async (req, res) => {
+  const update = req.body;
+
+  try {
+    // 1. Pre-Checkout Query
+    if (update.pre_checkout_query) {
+      await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/answerPreCheckoutQuery`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          pre_checkout_query_id: update.pre_checkout_query.id,
+          ok: true
+        }),
+      });
+      return res.sendStatus(200);
+    }
+
+    // 2. Successful Payment
+    if (update.message?.successful_payment) {
+      const payment = update.message.successful_payment;
+      const payload = JSON.parse(payment.invoice_payload);
+      const { userId, itemType, itemId } = payload;
+
+      console.log(`[Payment] User ${userId} bought ${itemType}:${itemId}`);
+      await applyShopReward(userId, itemType, itemId);
+      
+      // Notify user via Bot if possible (optional)
+    }
+  } catch (error) {
+    console.error("[Webhook Error]:", error);
+  }
+
+  res.sendStatus(200);
 });
 
 // Market endpoints

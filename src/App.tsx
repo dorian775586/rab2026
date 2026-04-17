@@ -542,7 +542,7 @@ export default function App() {
   const handleShopBuy = async (itemType: string, itemId: string) => {
     setActionLoading(`buy-${itemType}-${itemId}`);
     try {
-      const response = await fetch(API_URL + '/api/shop/buy', {
+      const response = await fetch(API_URL + '/api/create-stars-invoice', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -551,18 +551,23 @@ export default function App() {
         body: JSON.stringify({ itemType, itemId }),
       });
       const data = await response.json();
-      if (response.ok && data.success) {
-        if (data.user) setUser(data.user);
-        WebApp.showAlert('Покупка успешно завершена!');
-        WebApp.HapticFeedback.notificationOccurred('success');
+      if (response.ok && data.success && data.link) {
+        WebApp.openInvoice(data.link, (status) => {
+          if (status === 'paid') {
+            WebApp.HapticFeedback.notificationOccurred('success');
+            fetchUser(); // Обновляем данные пользователя после оплаты
+            setShopModal(null);
+          } else if (status === 'failed') {
+            WebApp.showAlert('Ошибка при проведении платежа');
+          }
+        });
       } else {
-        WebApp.showAlert(data.message || 'Ошибка покупки');
+        WebApp.showAlert(data.message || 'Ошибка создания счета');
       }
     } catch (err) {
       WebApp.showAlert('Ошибка сети');
     } finally {
       setActionLoading(null);
-      setShopModal(null);
     }
   };
 
