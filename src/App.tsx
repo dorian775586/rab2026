@@ -734,7 +734,7 @@ export default function App() {
       <header className="px-6 py-4 flex justify-between items-center sticky top-0 z-30 bg-[var(--crypto-header-bg)] backdrop-blur-xl">
         <div className="flex flex-col">
           <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-[0.2em]">ID: {user?.telegram_id}</span>
-          <h1 className={`text-lg font-extrabold tracking-tight ${user?.has_rainbow_name ? 'rainbow-text' : ''}`}>{user?.username}</h1>
+          <h1 className={`text-lg font-extrabold tracking-tight ${Boolean(user?.has_rainbow_name) ? 'rainbow-text' : ''}`}>{user?.username}</h1>
         </div>
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-3 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 px-4 py-2 rounded-2xl">
@@ -950,7 +950,7 @@ export default function App() {
                             </div>
                             <div className="min-w-0">
                               <div className="font-bold flex items-center gap-2 truncate">
-                                <span className={slave.has_rainbow_name ? 'rainbow-text' : ''}>
+                                <span className={Boolean(slave.has_rainbow_name) ? 'rainbow-text' : ''}>
                                   {slave.username}
                                 </span>
                                 {slave.on_market && (
@@ -1224,7 +1224,7 @@ export default function App() {
                           </div>
                           <div className="min-w-0">
                             <div className="font-bold truncate text-sm">
-                              <span className={listing.slave.has_rainbow_name ? 'rainbow-text' : ''}>
+                              <span className={Boolean(listing.slave.has_rainbow_name) ? 'rainbow-text' : ''}>
                                 {listing.slave.username}
                               </span>
                             </div>
@@ -1275,7 +1275,7 @@ export default function App() {
                           </div>
                           <div>
                             <h3 className="text-2xl font-black">
-                              <span className={viewingProfile.has_rainbow_name ? 'rainbow-text' : ''}>
+                              <span className={Boolean(viewingProfile.has_rainbow_name) ? 'rainbow-text' : ''}>
                                 {viewingProfile.username}
                               </span>
                             </h3>
@@ -1706,7 +1706,7 @@ export default function App() {
                     
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 truncate">
-                        <span className={`font-bold ${player.has_rainbow_name ? 'rainbow-text' : ''}`}>
+                        <span className={`font-bold ${Boolean(player.has_rainbow_name) ? 'rainbow-text' : ''}`}>
                           {player.username}
                         </span>
                         {player.telegram_id.toString() === user?.telegram_id.toString() && (

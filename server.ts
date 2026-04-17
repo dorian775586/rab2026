@@ -377,13 +377,14 @@ app.post("/api/spin", validateTelegram, async (req, res) => {
       return res.status(400).json({ success: false, message: data.error });
     }
 
-    // Normalize response for frontend
+    // Normalize response for frontend - Ensuring fields exist even if RPC returns array or scalar
+    const spinData = Array.isArray(data) ? data[0] : data;
     const result = {
       success: true,
-      type: data.type || 'empty',
-      win: data.win_amount || 0,
-      segment: data.segment_index,
-      newBalance: data.new_balance
+      type: spinData.type || 'loss',
+      win: Number(spinData.win_amount || 0),
+      segment: spinData.segment_index !== undefined ? spinData.segment_index : 1,
+      newBalance: spinData.new_balance
     };
     
     console.log(`Spin result for ${tgUser.id}:`, result);
