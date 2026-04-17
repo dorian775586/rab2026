@@ -784,34 +784,38 @@ app.get("/api/slaves", validateTelegram, async (req, res) => {
 app.get("/api/leaderboard", validateTelegram, async (req, res) => {
   try {
     const { data, error } = await supabase.rpc("get_leaderboard");
+    
+    // Если RPC не вернул данные или выдал ошибку, берем вручную
     if (error || !data || data.length === 0) {
-      // Fallback to manual query if RPC fails or returns empty
       const { data: manualData, error: manualError } = await supabase
         .from("users")
-        .select("telegram_id, username, balance, has_rainbow_name, photo_url")
+        .select("telegram_id, username, balance, has_rainbow_name, photo_url") // ДОБАВИЛИ has_rainbow_name
         .order("balance", { ascending: false })
         .limit(100);
       
       if (manualError) throw manualError;
       
-      // Add slaves count manually
       const leaderboardWithSlaves = await Promise.all((manualData || []).map(async (u: any) => {
         const { count } = await supabase
           .from("users")
           .select("*", { count: 'exact', head: true })
           .eq("owner_id", u.telegram_id);
+        
         return { 
           telegram_id: u.telegram_id,
           username: u.username,
           balance: u.balance,
           slaves_count: count || 0,
-          has_rainbow_name: u.has_rainbow_name,
+          has_rainbow_name: u.has_rainbow_name, // ТЕПЕРЬ ПЕРЕДАЕТСЯ
           photo_url: u.photo_url
         };
       }));
       
       return res.json(leaderboardWithSlaves);
     }
+    
+    // Если работает через RPC (get_leaderboard), убедись, что SQL функция в Supabase 
+    // тоже возвращает поле has_rainbow_name. Если нет - используй код выше.
     res.json(data);
   } catch (err: any) {
     res.status(500).json({ success: false, message: err.message });
