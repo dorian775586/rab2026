@@ -63,6 +63,7 @@ interface MarketUser {
   username: string;
   current_price: number;
   base_income: number;
+  has_rainbow_name?: boolean;
   level?: number;
   on_market?: boolean;
   photo_url?: string | null;
@@ -73,7 +74,7 @@ interface LeaderboardUser {
   username: string;
   balance: number;
   slaves_count: number;
-  has_rainbow_name?: boolean;
+  has_rainbow_name: boolean;
   photo_url?: string | null;
 }
 
@@ -949,7 +950,9 @@ export default function App() {
                             </div>
                             <div className="min-w-0">
                               <div className="font-bold flex items-center gap-2 truncate">
-                                {slave.username}
+                                <span className={slave.has_rainbow_name ? 'rainbow-text' : ''}>
+                                  {slave.username}
+                                </span>
                                 {slave.on_market && (
                                   <span className="text-[8px] bg-crypto-gold/20 text-crypto-gold px-1.5 py-0.5 rounded font-black uppercase shrink-0">На рынке</span>
                                 )}
@@ -1220,8 +1223,10 @@ export default function App() {
                             )}
                           </div>
                           <div className="min-w-0">
-                            <div className={`font-bold truncate text-sm ${listing.slave.has_rainbow_name ? 'rainbow-text' : ''}`}>
-                              {listing.slave.username}
+                            <div className="font-bold truncate text-sm">
+                              <span className={listing.slave.has_rainbow_name ? 'rainbow-text' : ''}>
+                                {listing.slave.username}
+                              </span>
                             </div>
                             <div className="text-[10px] text-slate-500 dark:text-slate-400 font-bold">Уровень {listing.slave.level}</div>
                           </div>
@@ -1269,7 +1274,11 @@ export default function App() {
                             )}
                           </div>
                           <div>
-                            <h3 className={`text-2xl font-black ${viewingProfile.has_rainbow_name ? 'rainbow-text' : ''}`}>{viewingProfile.username}</h3>
+                            <h3 className="text-2xl font-black">
+                              <span className={viewingProfile.has_rainbow_name ? 'rainbow-text' : ''}>
+                                {viewingProfile.username}
+                              </span>
+                            </h3>
                             <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">Уровень {viewingProfile.level}</p>
                           </div>
                         </div>
@@ -1696,9 +1705,13 @@ export default function App() {
                     </div>
                     
                     <div className="flex-1 min-w-0">
-                      <div className={`font-black flex items-center gap-2 truncate ${player.has_rainbow_name ? 'rainbow-text' : ''}`}>
-                        {player.username}
-                        {player.telegram_id.toString() === user?.telegram_id.toString() && <span className="text-[8px] bg-crypto-gold text-black px-1 rounded flex-shrink-0">ВЫ</span>}
+                      <div className="flex items-center gap-2 truncate">
+                        <span className={`font-bold ${player.has_rainbow_name ? 'rainbow-text' : ''}`}>
+                          {player.username}
+                        </span>
+                        {player.telegram_id.toString() === user?.telegram_id.toString() && (
+                          <span className="text-[8px] bg-crypto-gold text-black px-1 rounded flex-shrink-0 font-black">ВЫ</span>
+                        )}
                       </div>
                       <div className="flex items-center gap-3 text-[10px] text-slate-500 font-bold">
                         <span className="flex items-center gap-1"><Users className="w-3 h-3" /> {player.slaves_count} рабов</span>
