@@ -37,7 +37,8 @@ const SHOP_ITEMS: Record<string, Record<string, { price: number, title: string, 
     stealth: { price: 150, title: "Стелс-эликсир", desc: "Профиль скрыт на 12ч" }
   },
   extra: {
-    rainbow: { price: 777, title: "Радужный ник", desc: "Вечный эффект" }
+    rainbow: { price: 777, title: "Радужный ник", desc: "Вечный эффект" },
+    gold_frame: { price: 999, title: "Золотая рамка + Корона", desc: "Вечный эффект" }
   }
 };
 
@@ -74,6 +75,8 @@ async function applyShopReward(userId: string, itemType: string, itemId: string)
     updateData.active_potions = potions;
   } else if (itemType === 'extra' && itemId === 'rainbow') {
     updateData.has_rainbow_name = true;
+  } else if (itemType === 'extra' && itemId === 'gold_frame') {
+    updateData.has_gold_frame = true;
   }
 
   const { error: updateError } = await supabase
@@ -606,7 +609,7 @@ app.get("/api/market", validateTelegram, async (req, res) => {
   try {
     let query = supabase
       .from("market_listings")
-      .select("*, slave:slave_id(telegram_id, username, current_price, base_income, level, has_rainbow_name, photo_url)");
+      .select("*, slave:slave_id(telegram_id, username, current_price, base_income, level, has_rainbow_name, has_gold_frame, photo_url)");
 
     if (sort === "cheap") query = query.order("price", { ascending: true });
     else if (sort === "expensive") query = query.order("price", { ascending: false });
@@ -678,7 +681,7 @@ app.get("/api/market/my-listings", validateTelegram, async (req, res) => {
   try {
     const { data, error } = await supabase
       .from("market_listings")
-      .select("*, slave:slave_id(telegram_id, username, current_price, base_income, level)")
+      .select("*, slave:slave_id(telegram_id, username, current_price, base_income, level, has_rainbow_name, has_gold_frame, photo_url)")
       .eq("seller_id", BigInt(tgUser.id).toString());
     if (error) throw error;
     res.json(data);
@@ -693,7 +696,7 @@ app.get("/api/profile/:id", async (req, res) => {
   try {
     const { data: user, error: userError } = await supabase
       .from("users")
-      .select("telegram_id, username, balance, current_price, base_income, level, ghost_until, has_rainbow_name, photo_url")
+      .select("telegram_id, username, balance, current_price, base_income, level, ghost_until, has_rainbow_name, has_gold_frame, photo_url")
       .eq("telegram_id", targetId)
       .single();
     
@@ -701,7 +704,7 @@ app.get("/api/profile/:id", async (req, res) => {
 
     const { data: slaves, error: slavesError } = await supabase
       .from("users")
-      .select("telegram_id, username, current_price, base_income, level, has_rainbow_name, photo_url")
+      .select("telegram_id, username, current_price, base_income, level, has_rainbow_name, has_gold_frame, photo_url")
       .eq("owner_id", targetId);
     
     if (slavesError) throw slavesError;
@@ -772,7 +775,7 @@ app.get("/api/slaves", validateTelegram, async (req, res) => {
   try {
     const { data, error } = await supabase
       .from("users")
-      .select("telegram_id, username, current_price, base_income, level, on_market, has_rainbow_name, photo_url")
+      .select("telegram_id, username, current_price, base_income, level, on_market, has_rainbow_name, has_gold_frame, photo_url")
       .eq("owner_id", BigInt(tgUser.id).toString());
     
     if (error) throw error;
@@ -790,7 +793,7 @@ app.get("/api/leaderboard", validateTelegram, async (req, res) => {
     if (error || !data || data.length === 0) {
       const { data: manualData, error: manualError } = await supabase
         .from("users")
-        .select("telegram_id, username, balance, has_rainbow_name, photo_url") // ДОБАВИЛИ has_rainbow_name
+        .select("telegram_id, username, balance, has_rainbow_name, has_gold_frame, photo_url") // ДОБАВИЛИ has_rainbow_name
         .order("balance", { ascending: false })
         .limit(100);
       
@@ -808,6 +811,7 @@ app.get("/api/leaderboard", validateTelegram, async (req, res) => {
           balance: u.balance,
           slaves_count: count || 0,
           has_rainbow_name: u.has_rainbow_name, // ТЕПЕРЬ ПЕРЕДАЕТСЯ
+          has_gold_frame: u.has_gold_frame,
           photo_url: u.photo_url
         };
       }));

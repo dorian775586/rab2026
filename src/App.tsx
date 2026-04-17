@@ -56,6 +56,7 @@ interface UserData {
   managers: Record<string, number>;
   active_potions: Record<string, string>;
   has_rainbow_name: boolean;
+  has_gold_frame: boolean;
 }
 
 interface MarketUser {
@@ -64,6 +65,7 @@ interface MarketUser {
   current_price: number;
   base_income: number;
   has_rainbow_name?: boolean;
+  has_gold_frame?: boolean;
   level?: number;
   on_market?: boolean;
   photo_url?: string | null;
@@ -75,6 +77,7 @@ interface LeaderboardUser {
   balance: number;
   slaves_count: number;
   has_rainbow_name: boolean;
+  has_gold_frame: boolean;
   photo_url?: string | null;
 }
 
@@ -734,7 +737,10 @@ export default function App() {
       <header className="px-6 py-4 flex justify-between items-center sticky top-0 z-30 bg-[var(--crypto-header-bg)] backdrop-blur-xl">
         <div className="flex flex-col">
           <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-[0.2em]">ID: {user?.telegram_id}</span>
-          <h1 className={`text-lg font-extrabold tracking-tight ${Boolean(user?.has_rainbow_name) ? 'rainbow-text' : ''}`}>{user?.username}</h1>
+          <h1 className={`text-lg font-extrabold tracking-tight flex items-center gap-2 ${Boolean(user?.has_rainbow_name) ? 'rainbow-text' : ''}`}>
+            {user?.username}
+            {Boolean(user?.has_gold_frame) && <Crown className="w-4 h-4 text-crypto-gold drop-shadow-[0_0_5px_rgba(251,191,36,0.5)]" />}
+          </h1>
         </div>
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-3 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 px-4 py-2 rounded-2xl">
@@ -941,7 +947,7 @@ export default function App() {
                           className="glass-card p-4 flex justify-between items-center group active:scale-[0.98] transition-all cursor-pointer"
                         >
                           <div className="flex items-center gap-3 flex-1 min-w-0">
-                            <div className="w-10 h-10 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center border border-black/10 dark:border-white/10 shrink-0 overflow-hidden">
+                            <div className={`w-10 h-10 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center border shrink-0 overflow-hidden ${Boolean(slave.has_gold_frame) ? 'border-crypto-gold ring-2 ring-crypto-gold/50' : 'border-black/10 dark:border-white/10'}`}>
                               {slave.photo_url ? (
                                 <img src={slave.photo_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                               ) : (
@@ -953,6 +959,7 @@ export default function App() {
                                 <span className={Boolean(slave.has_rainbow_name) ? 'rainbow-text' : ''}>
                                   {slave.username}
                                 </span>
+                                {Boolean(slave.has_gold_frame) && <Crown className="w-3 h-3 text-crypto-gold" />}
                                 {slave.on_market && (
                                   <span className="text-[8px] bg-crypto-gold/20 text-crypto-gold px-1.5 py-0.5 rounded font-black uppercase shrink-0">На рынке</span>
                                 )}
@@ -1215,7 +1222,7 @@ export default function App() {
                 {filteredMarket.map((listing: any) => (
                   <div key={listing.id} className="glass-card p-4 flex justify-between items-center gap-4">
                         <div className="flex items-center gap-4 min-w-0 flex-1" onClick={() => fetchProfile(listing.slave.telegram_id)}>
-                          <div className="w-10 h-10 rounded-full bg-black/5 dark:bg-white/5 flex-shrink-0 flex items-center justify-center border border-black/10 dark:border-white/10 overflow-hidden">
+                          <div className={`w-10 h-10 rounded-full bg-black/5 dark:bg-white/5 flex-shrink-0 flex items-center justify-center border overflow-hidden ${Boolean(listing.slave.has_gold_frame) ? 'border-crypto-gold ring-2 ring-crypto-gold/50' : 'border-black/10 dark:border-white/10'}`}>
                             {listing.slave.photo_url ? (
                               <img src={listing.slave.photo_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                             ) : (
@@ -1223,10 +1230,11 @@ export default function App() {
                             )}
                           </div>
                           <div className="min-w-0">
-                            <div className="font-bold truncate text-sm">
+                            <div className="font-bold truncate text-sm flex items-center gap-1.5">
                               <span className={Boolean(listing.slave.has_rainbow_name) ? 'rainbow-text' : ''}>
                                 {listing.slave.username}
                               </span>
+                              {Boolean(listing.slave.has_gold_frame) && <Crown className="w-3 h-3 text-crypto-gold" />}
                             </div>
                             <div className="text-[10px] text-slate-500 dark:text-slate-400 font-bold">Уровень {listing.slave.level}</div>
                           </div>
@@ -1266,7 +1274,7 @@ export default function App() {
                     <div className="w-full bg-[var(--crypto-bg)] rounded-t-[32px] p-8 space-y-6 border-t border-white/10 max-h-[90vh] overflow-y-auto">
                       <div className="flex justify-between items-center">
                         <div className="flex items-center gap-4">
-                          <div className="w-14 h-14 rounded-full bg-crypto-gold/10 flex items-center justify-center overflow-hidden border border-white/10">
+                          <div className={`w-14 h-14 rounded-full bg-crypto-gold/10 flex items-center justify-center overflow-hidden border ${Boolean(viewingProfile.has_gold_frame) ? 'border-crypto-gold ring-4 ring-crypto-gold/30' : 'border-white/10'}`}>
                             {viewingProfile.photo_url ? (
                               <img src={viewingProfile.photo_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                             ) : (
@@ -1274,10 +1282,11 @@ export default function App() {
                             )}
                           </div>
                           <div>
-                            <h3 className="text-2xl font-black">
+                            <h3 className="text-2xl font-black flex items-center gap-2">
                               <span className={Boolean(viewingProfile.has_rainbow_name) ? 'rainbow-text' : ''}>
                                 {viewingProfile.username}
                               </span>
+                              {Boolean(viewingProfile.has_gold_frame) && <Crown className="w-5 h-5 text-crypto-gold drop-shadow-lg" />}
                             </h3>
                             <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">Уровень {viewingProfile.level}</p>
                           </div>
@@ -1302,8 +1311,17 @@ export default function App() {
                           {viewingProfile.slaves.map(slave => (
                             <div key={slave.telegram_id} className="glass-card p-4 flex justify-between items-center">
                               <div className="flex items-center gap-3">
-                                <User className="w-4 h-4 text-slate-500" />
-                                <span className="font-bold">{slave.username}</span>
+                                <div className={`w-8 h-8 rounded-full bg-white/5 flex items-center justify-center border overflow-hidden ${Boolean(slave.has_gold_frame) ? 'border-crypto-gold ring-1 ring-crypto-gold/50' : 'border-white/10'}`}>
+                                  {slave.photo_url ? (
+                                      <img src={slave.photo_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                  ) : (
+                                      <User className="w-4 h-4 text-slate-500" />
+                                  )}
+                                </div>
+                                <span className={`font-bold flex items-center gap-1 ${Boolean(slave.has_rainbow_name) ? 'rainbow-text' : ''}`}>
+                                  {slave.username}
+                                  {Boolean(slave.has_gold_frame) && <Crown className="w-3 h-3 text-crypto-gold" />}
+                                </span>
                               </div>
                               <button 
                                 onClick={() => handleBuy(slave.telegram_id)}
@@ -1660,6 +1678,15 @@ export default function App() {
                         loading={actionLoading === 'buy-extra-rainbow'}
                         disabled={user?.has_rainbow_name}
                       />
+                      <ShopItemCard 
+                        title="Золотая рамка + Корона" 
+                        desc="Стань настоящим королем рабов с золотой рамкой!" 
+                        price="999 ⭐" 
+                        icon={<Crown className="w-6 h-6 text-crypto-gold" />}
+                        onClick={() => handleShopBuy('extra', 'gold_frame')}
+                        loading={actionLoading === 'buy-extra-gold_frame'}
+                        disabled={user?.has_gold_frame}
+                      />
                     </>
                   )}
                 </div>
@@ -1696,7 +1723,7 @@ export default function App() {
                        <div className="text-slate-500 font-black">{index + 1}</div>}
                     </div>
 
-                    <div className="w-10 h-10 rounded-full bg-white/5 border border-white/10 overflow-hidden flex items-center justify-center flex-shrink-0">
+                    <div className={`w-10 h-10 rounded-full bg-white/5 border overflow-hidden flex items-center justify-center flex-shrink-0 ${Boolean(player.has_gold_frame) ? 'border-crypto-gold ring-2 ring-crypto-gold/50' : 'border-white/10'}`}>
                       {player.photo_url ? (
                         <img src={player.photo_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                       ) : (
@@ -1709,6 +1736,7 @@ export default function App() {
                         <span className={`font-bold ${Boolean(player.has_rainbow_name) ? 'rainbow-text' : ''}`}>
                           {player.username}
                         </span>
+                        {Boolean(player.has_gold_frame) && <Crown className="w-3 h-3 text-crypto-gold flex-shrink-0" />}
                         {player.telegram_id.toString() === user?.telegram_id.toString() && (
                           <span className="text-[8px] bg-crypto-gold text-black px-1 rounded flex-shrink-0 font-black">ВЫ</span>
                         )}
