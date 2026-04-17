@@ -510,7 +510,7 @@ app.get("/api/market", validateTelegram, async (req, res) => {
   try {
     let query = supabase
       .from("market_listings")
-      .select("*, slave:slave_id(telegram_id, username, current_price, base_income, level)");
+      .select("*, slave:slave_id(telegram_id, username, current_price, base_income, level, has_rainbow_name, photo_url)");
 
     if (sort === "cheap") query = query.order("price", { ascending: true });
     else if (sort === "expensive") query = query.order("price", { ascending: false });
@@ -597,7 +597,7 @@ app.get("/api/profile/:id", async (req, res) => {
   try {
     const { data: user, error: userError } = await supabase
       .from("users")
-      .select("telegram_id, username, balance, current_price, base_income, level, ghost_until")
+      .select("telegram_id, username, balance, current_price, base_income, level, ghost_until, has_rainbow_name, photo_url")
       .eq("telegram_id", targetId)
       .single();
     
@@ -605,7 +605,7 @@ app.get("/api/profile/:id", async (req, res) => {
 
     const { data: slaves, error: slavesError } = await supabase
       .from("users")
-      .select("telegram_id, username, current_price, base_income, level")
+      .select("telegram_id, username, current_price, base_income, level, has_rainbow_name, photo_url")
       .eq("owner_id", targetId);
     
     if (slavesError) throw slavesError;
@@ -676,7 +676,7 @@ app.get("/api/slaves", validateTelegram, async (req, res) => {
   try {
     const { data, error } = await supabase
       .from("users")
-      .select("telegram_id, username, current_price, base_income, level, on_market")
+      .select("telegram_id, username, current_price, base_income, level, on_market, has_rainbow_name, photo_url")
       .eq("owner_id", BigInt(tgUser.id).toString());
     
     if (error) throw error;
@@ -693,7 +693,7 @@ app.get("/api/leaderboard", validateTelegram, async (req, res) => {
       // Fallback to manual query if RPC fails or returns empty
       const { data: manualData, error: manualError } = await supabase
         .from("users")
-        .select("telegram_id, username, balance")
+        .select("telegram_id, username, balance, has_rainbow_name, photo_url")
         .order("balance", { ascending: false })
         .limit(100);
       
@@ -709,7 +709,9 @@ app.get("/api/leaderboard", validateTelegram, async (req, res) => {
           telegram_id: u.telegram_id,
           username: u.username,
           balance: u.balance,
-          slaves_count: count || 0 
+          slaves_count: count || 0,
+          has_rainbow_name: u.has_rainbow_name,
+          photo_url: u.photo_url
         };
       }));
       

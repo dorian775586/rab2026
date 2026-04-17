@@ -73,6 +73,8 @@ interface LeaderboardUser {
   username: string;
   balance: number;
   slaves_count: number;
+  has_rainbow_name?: boolean;
+  photo_url?: string | null;
 }
 
 type Tab = 'profile' | 'slaves' | 'market' | 'games' | 'shop' | 'leaderboard';
@@ -1204,15 +1206,21 @@ export default function App() {
                <div className="space-y-3">
                 {filteredMarket.map((listing: any) => (
                   <div key={listing.id} className="glass-card p-4 flex justify-between items-center gap-4">
-                    <div className="flex items-center gap-4 min-w-0 flex-1" onClick={() => fetchProfile(listing.slave.telegram_id)}>
-                      <div className="w-10 h-10 rounded-full bg-black/5 dark:bg-white/5 flex-shrink-0 flex items-center justify-center border border-black/10 dark:border-white/10">
-                        <User className="w-5 h-5 text-slate-400" />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="font-bold truncate text-sm">{listing.slave.username}</div>
-                        <div className="text-[10px] text-slate-500 dark:text-slate-400 font-bold">Уровень {listing.slave.level}</div>
-                      </div>
-                    </div>
+                        <div className="flex items-center gap-4 min-w-0 flex-1" onClick={() => fetchProfile(listing.slave.telegram_id)}>
+                          <div className="w-10 h-10 rounded-full bg-black/5 dark:bg-white/5 flex-shrink-0 flex items-center justify-center border border-black/10 dark:border-white/10 overflow-hidden">
+                            {listing.slave.photo_url ? (
+                              <img src={listing.slave.photo_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                            ) : (
+                              <User className="w-5 h-5 text-slate-400" />
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <div className={`font-bold truncate text-sm ${listing.slave.has_rainbow_name ? 'rainbow-text' : ''}`}>
+                              {listing.slave.username}
+                            </div>
+                            <div className="text-[10px] text-slate-500 dark:text-slate-400 font-bold">Уровень {listing.slave.level}</div>
+                          </div>
+                        </div>
                     <div className="flex items-center gap-4 flex-shrink-0">
                       <div className="flex flex-col items-end justify-center">
                         <div className="flex items-center gap-1">
@@ -1248,11 +1256,15 @@ export default function App() {
                     <div className="w-full bg-[var(--crypto-bg)] rounded-t-[32px] p-8 space-y-6 border-t border-white/10 max-h-[90vh] overflow-y-auto">
                       <div className="flex justify-between items-center">
                         <div className="flex items-center gap-4">
-                          <div className="w-14 h-14 rounded-full bg-crypto-gold/10 flex items-center justify-center">
-                            <User className="w-8 h-8 text-crypto-gold" />
+                          <div className="w-14 h-14 rounded-full bg-crypto-gold/10 flex items-center justify-center overflow-hidden border border-white/10">
+                            {viewingProfile.photo_url ? (
+                              <img src={viewingProfile.photo_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                            ) : (
+                              <User className="w-8 h-8 text-crypto-gold" />
+                            )}
                           </div>
                           <div>
-                            <h3 className="text-2xl font-black">{viewingProfile.username}</h3>
+                            <h3 className={`text-2xl font-black ${viewingProfile.has_rainbow_name ? 'rainbow-text' : ''}`}>{viewingProfile.username}</h3>
                             <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">Уровень {viewingProfile.level}</p>
                           </div>
                         </div>
@@ -1420,9 +1432,9 @@ export default function App() {
                 <motion.div 
                   initial={{ scale: 0.5, opacity: 0 }}
                   animate={{ scale: 1, opacity: 1 }}
-                  className={`w-full p-4 rounded-2xl font-black text-center text-lg border ${spinResult.win > 0 ? 'bg-crypto-emerald/20 text-crypto-emerald border-crypto-emerald/30' : 'bg-red-500/20 text-red-400 border-red-500/30'}`}
+                  className={`w-full p-4 rounded-2xl font-black text-center text-lg border ${(spinResult.type === 'win' || spinResult.type === 'jackpot' || spinResult.win > 0) ? 'bg-crypto-emerald/20 text-crypto-emerald border-crypto-emerald/30' : 'bg-red-500/20 text-red-400 border-red-500/30'}`}
                 >
-                  {spinResult.type === 'jackpot' ? '🔥 JACKPOT!!! 🔥' : spinResult.win > 0 ? `ВЫИГРЫШ: +${spinResult.win}` : 'ПУСТО'}
+                  {spinResult.type === 'jackpot' ? '🔥 JACKPOT!!! 🔥' : (spinResult.type === 'win' || spinResult.win > 0) ? `ВЫИГРЫШ: +${spinResult.win}` : 'ПУСТО'}
                 </motion.div>
               )}
 
@@ -1669,11 +1681,19 @@ export default function App() {
                        index === 2 ? <div className="text-amber-600 font-black">3</div> :
                        <div className="text-slate-500 font-black">{index + 1}</div>}
                     </div>
+
+                    <div className="w-10 h-10 rounded-full bg-white/5 border border-white/10 overflow-hidden flex items-center justify-center flex-shrink-0">
+                      {player.photo_url ? (
+                        <img src={player.photo_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                      ) : (
+                        <User className="w-5 h-5 text-slate-500" />
+                      )}
+                    </div>
                     
-                    <div className="flex-1">
-                      <div className={`font-black flex items-center gap-2 ${player.telegram_id === user?.telegram_id && user?.has_rainbow_name ? 'rainbow-text' : ''}`}>
+                    <div className="flex-1 min-w-0">
+                      <div className={`font-black flex items-center gap-2 truncate ${player.has_rainbow_name ? 'rainbow-text' : ''}`}>
                         {player.username}
-                        {player.telegram_id === user?.telegram_id && <span className="text-[8px] bg-crypto-gold text-black px-1 rounded">ВЫ</span>}
+                        {player.telegram_id.toString() === user?.telegram_id.toString() && <span className="text-[8px] bg-crypto-gold text-black px-1 rounded flex-shrink-0">ВЫ</span>}
                       </div>
                       <div className="flex items-center gap-3 text-[10px] text-slate-500 font-bold">
                         <span className="flex items-center gap-1"><Users className="w-3 h-3" /> {player.slaves_count} рабов</span>

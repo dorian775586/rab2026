@@ -415,13 +415,19 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- RPC for leaderboard
+-- Добавляем колонку photo_url если её нет
+ALTER TABLE users ADD COLUMN IF NOT EXISTS photo_url TEXT;
+
+-- Обновляем лидерборд для возврата радуги и фото
+DROP FUNCTION IF EXISTS get_leaderboard();
 CREATE OR REPLACE FUNCTION get_leaderboard()
 RETURNS TABLE (
     telegram_id BIGINT,
     username TEXT,
     balance BIGINT,
-    slaves_count BIGINT
+    slaves_count BIGINT,
+    has_rainbow_name BOOLEAN,
+    photo_url TEXT
 ) AS $$
 BEGIN
     RETURN QUERY
@@ -429,7 +435,9 @@ BEGIN
         u.telegram_id, 
         u.username, 
         u.balance, 
-        (SELECT COUNT(*) FROM users s WHERE s.owner_id = u.telegram_id) as slaves_count
+        (SELECT COUNT(*) FROM users s WHERE s.owner_id = u.telegram_id) as slaves_count,
+        u.has_rainbow_name,
+        u.photo_url
     FROM users u
     ORDER BY u.balance DESC
     LIMIT 100;
