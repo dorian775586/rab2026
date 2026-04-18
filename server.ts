@@ -8,6 +8,11 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
+// BigInt JSON Fix
+(BigInt.prototype as any).toJSON = function () {
+  return this.toString();
+};
+
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 
@@ -41,7 +46,7 @@ const SHOP_ITEMS: Record<string, Record<string, { price: number, title: string, 
     gold_frame: { price: 999, title: "Золотая рамка + Корона", desc: "Вечный эффект" }
   },
   clans: {
-    create: { price: 100, title: "Создание клана", desc: "Собери свою команду!" }
+    create: { price: 100, title: "Создание клана", desc: "Собери свою команду за 100 монет!" }
   }
 };
 
@@ -191,9 +196,57 @@ const validateTelegram = (req: express.Request, res: express.Response, next: exp
   }
 };
 
+// Daily Reward Logic helper
+const DAILY_REWARDS = [100, 250, 500, 1000, 2500, 5000, 10000];
+
 // API Routes
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok" });
+});
+
+app.get("/api/daily-reward/status", validateTelegram, async (req, res) => {
+  const tgUser = (req as any).tgUser;
+  try {
+    const { data: user, error } = await supabase
+      .from("users")
+      .select("last_reward_date, reward_streak")
+      .eq("telegram_id", BigInt(tgUser.id).toString())
+      .single();
+
+    if (error) throw error;
+
+    const today = new Date().toISOString().split('T')[0];
+    const canClaim = user.last_reward_date !== today;
+    
+    res.json({
+      canClaim,
+      streak: user.reward_streak || 0,
+      nextReward: DAILY_REWARDS[(user.reward_streak || 0) % 7],
+      lastRewardDate: user.last_reward_date
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+app.post("/api/daily-reward/claim", validateTelegram, async (req, res) => {
+  const tgUser = (req as any).tgUser;
+  try {
+    const { data, error } = await supabase.rpc("claim_daily_reward", { 
+      user_id_param: BigInt(tgUser.id).toString() 
+    });
+    
+    if (error) throw error;
+    
+    if (data && !data.success) {
+      return res.status(400).json(data);
+    }
+
+    const fullUser = await getFullUser(BigInt(tgUser.id).toString());
+    res.json({ ...data, user: fullUser });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 // Sync endpoint: Calculate passive income and return user state
@@ -604,14 +657,20 @@ app.post("/api/webhook/telegram", async (req, res) => {
       console.log(`[Payment] User ${userId} bought ${itemType}:${itemId}`);
       
       if (itemType === 'clan_create') {
+        console.log(`[Payment] Creating clan "${clanName}" for user ${userId}`);
         const { data: newClan, error: clanError } = await supabase
           .from("clans")
           .insert({ name: clanName, leader_id: userId })
           .select()
           .single();
         
+        if (clanError) {
+          console.error("[Clan Create Webhook Error]:", clanError);
+        }
+
         if (!clanError && newClan) {
-          await supabase.from("users").update({ clan_id: newClan.id }).eq("telegram_id", userId);
+          const { error: userUpdateError } = await supabase.from("users").update({ clan_id: newClan.id }).eq("telegram_id", userId);
+          if (userUpdateError) console.error("[Update User Clan Error]:", userUpdateError);
         }
       } else {
         await applyShopReward(userId, itemType, itemId);
@@ -853,21 +912,6 @@ app.get("/api/leaderboard", validateTelegram, async (req, res) => {
 });
 
 // Vite middleware setup
-async function startServer() {
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
-  }
-
 // Clan Endpoints
 app.get("/api/clans/top", async (req, res) => {
   try {
@@ -881,8 +925,9 @@ app.get("/api/clans/top", async (req, res) => {
 
 app.get("/api/clans/my", validateTelegram, async (req, res) => {
   const tgUser = (req as any).tgUser;
+  const userId = BigInt(tgUser.id).toString();
   try {
-    const { data: user } = await supabase.from("users").select("clan_id").eq("telegram_id", tgUser.id).single();
+    const { data: user } = await supabase.from("users").select("clan_id").eq("telegram_id", userId).single();
     if (!user?.clan_id) return res.json({ inClan: false });
 
     const { data: clan } = await supabase.from("clans").select("*").eq("id", user.clan_id).single();
@@ -968,6 +1013,77 @@ app.post("/api/clans/leave", validateTelegram, async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 });
+
+app.post("/api/clans/create-coin", validateTelegram, async (req, res) => {
+  const tgUser = (req as any).tgUser;
+  const { clanName } = req.body;
+
+  if (!clanName || clanName.length < 3) {
+    return res.status(400).json({ success: false, message: "Имя клана слишком короткое" });
+  }
+
+  try {
+    // 1. Get user and balance
+    const { data: user, error: userError } = await supabase
+      .from("users")
+      .select("balance, clan_id, telegram_id")
+      .eq("telegram_id", BigInt(tgUser.id).toString())
+      .single();
+
+    if (userError || !user) throw new Error("Пользователь не найден");
+    if (user.clan_id) return res.status(400).json({ success: false, message: "Вы уже в клане" });
+    if (user.balance < 100) return res.status(400).json({ success: false, message: "Недостаточно монет" });
+
+    // 2. Check if clan name exists
+    const { data: existingClan } = await supabase
+      .from("clans")
+      .select("id")
+      .eq("name", clanName)
+      .maybeSingle();
+
+    if (existingClan) return res.status(400).json({ success: false, message: "Клан с таким именем уже существует" });
+
+    // 3. Create clan
+    const { data: newClan, error: clanError } = await supabase
+      .from("clans")
+      .insert({ name: clanName, leader_id: BigInt(tgUser.id).toString() })
+      .select()
+      .single();
+
+    if (clanError || !newClan) throw clanError;
+
+    // 4. Update user (subtract coins and set clan_id)
+    const { error: updateError } = await supabase
+      .from("users")
+      .update({ 
+        balance: user.balance - 100,
+        clan_id: newClan.id 
+      })
+      .eq("telegram_id", BigInt(tgUser.id).toString());
+
+    if (updateError) throw updateError;
+
+    res.json({ success: true, clan: newClan });
+  } catch (err: any) {
+    console.error("[Clan Create Error]:", err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+async function startServer() {
+  if (process.env.NODE_ENV !== "production") {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa",
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), "dist");
+    app.use(express.static(distPath));
+    app.get("*", (req, res) => {
+      res.sendFile(path.join(distPath, "index.html"));
+    });
+  }
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);

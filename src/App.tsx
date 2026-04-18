@@ -117,6 +117,7 @@ export default function App() {
   const [clansTop, setClansTop] = useState<ClanTop[]>([]);
   const [myClan, setMyClan] = useState<any>(null);
   const [clanInvites, setClanInvites] = useState<ClanInvite[]>([]);
+  const [dailyReward, setDailyReward] = useState<{ canClaim: boolean, streak: number, nextReward: number } | null>(null);
   const [newClanName, setNewClanName] = useState('');
   const [isClanModalOpen, setIsClanModalOpen] = useState(false);
   
@@ -328,6 +329,50 @@ export default function App() {
     }
   }, []);
 
+  const fetchDailyRewardStatus = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/daily-reward/status`, {
+        headers: { 'x-telegram-init-data': WebApp.initData || '' },
+      });
+      const data = await response.json();
+      if (response.ok) setDailyReward(data);
+    } catch (err) {
+      console.error('Fetch daily reward status error:', err);
+    }
+  }, [API_URL]);
+
+  const handleClaimDailyReward = async () => {
+    setActionLoading('daily-reward');
+    try {
+      const response = await fetch(`${API_URL}/api/daily-reward/claim`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-telegram-init-data': WebApp.initData || '',
+        },
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        if (data.user) setUser(data.user);
+        WebApp.showAlert(`Награда получена: ${data.reward} 🟡`);
+        WebApp.HapticFeedback.notificationOccurred('success');
+        fetchDailyRewardStatus();
+        confetti({
+          particleCount: 100,
+          spread: 70,
+          origin: { y: 0.8 },
+          colors: ['#fbbf24', '#ffffff']
+        });
+      } else {
+        WebApp.showAlert(data.message || 'Ошибка получения награды');
+      }
+    } catch (err) {
+      WebApp.showAlert('Ошибка сети');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   useEffect(() => {
     WebApp.ready();
     WebApp.expand();
@@ -337,7 +382,8 @@ export default function App() {
     fetchClansTop();
     fetchMyClan();
     fetchClanInvites();
-  }, [fetchUser, fetchGlobals, fetchLeaderboard, fetchClansTop, fetchMyClan, fetchClanInvites]);
+    fetchDailyRewardStatus();
+  }, [fetchUser, fetchGlobals, fetchLeaderboard, fetchClansTop, fetchMyClan, fetchClanInvites, fetchDailyRewardStatus]);
 
   useEffect(() => {
     if (activeTab === 'slaves') {
@@ -703,6 +749,36 @@ export default function App() {
     }
   };
 
+  const handleCreateClanWithCoins = async () => {
+    if (newClanName.length < 3) return;
+    setActionLoading('create-clan');
+    try {
+      const response = await fetch(`${API_URL}/api/clans/create-coin`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-telegram-init-data': WebApp.initData 
+        },
+        body: JSON.stringify({ clanName: newClanName }),
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        WebApp.HapticFeedback.notificationOccurred('success');
+        WebApp.showAlert('Клан успешно создан!');
+        setIsClanModalOpen(false);
+        setNewClanName('');
+        fetchMyClan();
+        fetchUser();
+      } else {
+        WebApp.showAlert(data.message || 'Ошибка создания клана');
+      }
+    } catch (err) {
+      WebApp.showAlert('Ошибка сети');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const handleBuyPremium = async () => {
     setActionLoading('premium');
     try {
@@ -884,6 +960,18 @@ export default function App() {
                 <div className="absolute top-0 right-0 p-4 opacity-10">
                   <Crown className="w-24 h-24 text-crypto-gold" />
                 </div>
+                
+                {dailyReward?.canClaim && (
+                  <motion.button
+                    initial={{ scale: 0.9, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    onClick={handleClaimDailyReward}
+                    disabled={actionLoading === 'daily-reward'}
+                    className="absolute top-14 right-4 bg-crypto-gold text-black text-[9px] font-black px-3 py-1.5 rounded-full shadow-[0_4px_10px_rgba(251,191,36,0.3)] animate-pulse active:scale-95 z-20"
+                  >
+                    {actionLoading === 'daily-reward' ? '⏳...' : '🎁 БОНУС'}
+                  </motion.button>
+                )}
                 
                 <div className="relative z-10">
                   <div className="flex items-center gap-2 mb-6">
@@ -1975,7 +2063,7 @@ export default function App() {
                           onClick={() => setIsClanModalOpen(true)}
                           className="gold-button w-full py-3.5 text-xs font-black uppercase tracking-widest shadow-[0_10px_20px_rgba(251,191,36,0.1)] active:scale-[0.98]"
                         >
-                          СОЗДАТЬ КЛАН ЗА 100 ⭐
+                          СОЗДАТЬ КЛАН ЗА 100 🟡
                         </button>
                       </div>
                     )}
@@ -2042,7 +2130,7 @@ export default function App() {
                   </div>
 
                   <p className="text-xs text-slate-400 font-medium mb-6 leading-relaxed">
-                    Создание клана стоит <span className="text-crypto-gold font-bold">100 ⭐</span>. 
+                    Создание клана стоит <span className="text-crypto-gold font-bold">100 🟡</span>. 
                     После создания вы станете лидером и сможете приглашать других игроков.
                   </p>
 
@@ -2060,11 +2148,11 @@ export default function App() {
                     </div>
 
                     <button 
-                      onClick={() => handleShopBuy('clans', 'create', { clanName: newClanName })}
+                      onClick={handleCreateClanWithCoins}
                       disabled={newClanName.length < 3 || actionLoading !== null}
                       className="gold-button w-full py-4 text-sm font-black shadow-[0_15px_30px_rgba(251,191,36,0.15)] flex items-center justify-center gap-2"
                     >
-                      {actionLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <>ОПЛАТИТЬ 100 ⭐</>}
+                      {actionLoading === 'create-clan' ? <Loader2 className="w-5 h-5 animate-spin" /> : <>СОЗДАТЬ ЗА 100 🟡</>}
                     </button>
                   </div>
                 </motion.div>
