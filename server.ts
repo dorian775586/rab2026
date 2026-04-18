@@ -213,13 +213,28 @@ app.get("/api/daily-reward/status", validateTelegram, async (req, res) => {
     if (error) throw error;
 
     const today = new Date().toISOString().split('T')[0];
-    const canClaim = user.last_reward_date !== today;
+    const lastClaim = user.last_reward_date;
     
+    let canClaim = lastClaim !== today;
+    let streak = user.reward_streak || 0;
+
+    // If more than 48 hours passed, reset streak
+    if (lastClaim) {
+        const lastDate = new Date(lastClaim);
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yesterdayStr = yesterday.toISOString().split('T')[0];
+        
+        if (lastClaim !== yesterdayStr && lastClaim !== today) {
+            streak = 0;
+        }
+    }
+
     res.json({
       canClaim,
-      streak: user.reward_streak || 0,
-      nextReward: DAILY_REWARDS[(user.reward_streak || 0) % 7],
-      lastRewardDate: user.last_reward_date
+      streak,
+      rewards: DAILY_REWARDS,
+      lastRewardDate: lastClaim
     });
   } catch (err: any) {
     res.status(500).json({ success: false, message: err.message });
@@ -229,18 +244,55 @@ app.get("/api/daily-reward/status", validateTelegram, async (req, res) => {
 app.post("/api/daily-reward/claim", validateTelegram, async (req, res) => {
   const tgUser = (req as any).tgUser;
   try {
-    const { data, error } = await supabase.rpc("claim_daily_reward", { 
-      user_id_param: BigInt(tgUser.id).toString() 
-    });
-    
-    if (error) throw error;
-    
-    if (data && !data.success) {
-      return res.status(400).json(data);
+    const userId = BigInt(tgUser.id).toString();
+    const { data: user, error: fetchError } = await supabase
+      .from("users")
+      .select("last_reward_date, reward_streak, balance")
+      .eq("telegram_id", userId)
+      .single();
+
+    if (fetchError) throw fetchError;
+
+    const today = new Date().toISOString().split('T')[0];
+    if (user.last_reward_date === today) {
+      return res.status(400).json({ success: false, message: "Вы уже получили награду сегодня!" });
     }
 
-    const fullUser = await getFullUser(BigInt(tgUser.id).toString());
-    res.json({ ...data, user: fullUser });
+    let newStreak = (user.reward_streak || 0) + 1;
+    
+    // Check if streak was broken (more than 1 day missed)
+    if (user.last_reward_date) {
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yesterdayStr = yesterday.toISOString().split('T')[0];
+        if (user.last_reward_date !== yesterdayStr) {
+            newStreak = 1;
+        }
+    }
+
+    // Wrap around streak after 7 days
+    if (newStreak > 7) newStreak = 1;
+
+    const reward = DAILY_REWARDS[newStreak - 1];
+
+    const { error: updateError } = await supabase
+      .from("users")
+      .update({
+        balance: (user.balance || 0) + reward,
+        last_reward_date: today,
+        reward_streak: newStreak
+      })
+      .eq("telegram_id", userId);
+
+    if (updateError) throw updateError;
+
+    const fullUser = await getFullUser(userId);
+    res.json({ 
+      success: true, 
+      reward, 
+      streak: newStreak,
+      user: fullUser 
+    });
   } catch (err: any) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -840,6 +892,30 @@ app.get("/api/profile/:id", async (req, res) => {
     if (slavesError) throw slavesError;
 
     res.json({ ...user, slaves });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+app.post("/api/clans/join", validateTelegram, async (req, res) => {
+  const tgUser = (req as any).tgUser;
+  const { clanId } = req.body;
+  try {
+    const userId = BigInt(tgUser.id).toString();
+    const { data: user } = await supabase.from("users").select("clan_id").eq("telegram_id", userId).single();
+    if (user?.clan_id) return res.status(400).json({ success: false, message: "Вы уже в клане" });
+
+    const { data: clan } = await supabase.from("clans").select("id").eq("id", clanId).single();
+    if (!clan) return res.status(404).json({ success: false, message: "Клан не найден" });
+
+    // Check member count (limit 50)
+    const { count } = await supabase.from("users").select("*", { count: 'exact', head: true }).eq("clan_id", clanId);
+    if ((count || 0) >= 50) return res.status(400).json({ success: false, message: "Клан переполнен (макс. 50 участников)" });
+
+    const { error } = await supabase.from("users").update({ clan_id: clanId }).eq("telegram_id", userId);
+    if (error) throw error;
+
+    res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ success: false, message: err.message });
   }

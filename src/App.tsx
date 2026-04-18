@@ -20,6 +20,7 @@ import {
   ArrowRight,
   Zap,
   Plus,
+  UserPlus,
   Dices,
   Store,
   RefreshCw,
@@ -128,7 +129,8 @@ export default function App() {
   const [myClan, setMyClan] = useState<any>(null);
   const [clanRequests, setClanRequests] = useState<ClanJoinRequest[]>([]);
   const [clanInvites, setClanInvites] = useState<ClanInvite[]>([]);
-  const [dailyReward, setDailyReward] = useState<{ canClaim: boolean, streak: number, nextReward: number } | null>(null);
+  const [dailyReward, setDailyReward] = useState<{ canClaim: boolean, streak: number, rewards: number[] } | null>(null);
+  const [showDailyRewardModal, setShowDailyRewardModal] = useState(false);
   const [newClanName, setNewClanName] = useState('');
   const [isClanModalOpen, setIsClanModalOpen] = useState(false);
   
@@ -197,9 +199,43 @@ export default function App() {
     WebApp.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`);
   };
 
+  const copyClanLink = () => {
+    if (!myClan || !myClan.inClan) return;
+    const link = `https://t.me/${botUsername}/app?startapp=clan_${myClan.clan.id}`;
+    navigator.clipboard.writeText(link);
+    WebApp.showAlert('Ссылка-приглашение в клан скопирована!');
+    WebApp.HapticFeedback.notificationOccurred('success');
+  };
+
+  const handleJoinClanLink = async (clanId: string) => {
+    try {
+      const response = await fetch(`${API_URL}/api/clans/join`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-telegram-init-data': WebApp.initData || '',
+        },
+        body: JSON.stringify({ clanId }),
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        WebApp.showAlert(`Вы успешно вступили в клан!`);
+        fetchMyClan();
+        fetchUser();
+      } else {
+        WebApp.showAlert(data.message || 'Не удалось вступить в клан');
+      }
+    } catch (err) {
+      WebApp.showAlert('Ошибка сети при вступлении в клан');
+    }
+  };
+
   const fetchUser = useCallback(async () => {
     try {
       const startParam = WebApp.initDataUnsafe.start_param;
+      if (startParam && startParam.startsWith('clan_')) {
+         // We handle this separately or pass to sync
+      }
       const response = await fetch(`${API_URL}/api/sync`, {
         method: 'POST',
         headers: {
@@ -403,7 +439,12 @@ export default function App() {
         headers: { 'x-telegram-init-data': WebApp.initData || '' },
       });
       const data = await response.json();
-      if (response.ok) setDailyReward(data);
+      if (response.ok) {
+        setDailyReward(data);
+        if (data.canClaim) {
+           setShowDailyRewardModal(true);
+        }
+      }
     } catch (err) {
       console.error('Fetch daily reward status error:', err);
     }
@@ -425,6 +466,7 @@ export default function App() {
         WebApp.showAlert(`Награда получена: ${data.reward} 🟡`);
         WebApp.HapticFeedback.notificationOccurred('success');
         fetchDailyRewardStatus();
+        setShowDailyRewardModal(false);
         confetti({
           particleCount: 100,
           spread: 70,
@@ -444,6 +486,19 @@ export default function App() {
   useEffect(() => {
     WebApp.ready();
     WebApp.expand();
+
+    // Handle deep links
+    const startParam = WebApp.initDataUnsafe.start_param;
+    if (startParam && startParam.startsWith('clan_')) {
+        const clanId = startParam.replace('clan_', '');
+        // delay a bit to ensure everything is loaded
+        setTimeout(() => {
+            if (window.confirm('Вступить в этот клан по приглашению?')) {
+                handleJoinClanLink(clanId);
+            }
+        }, 1500);
+    }
+
     fetchUser();
     fetchGlobals();
     fetchLeaderboard();
@@ -1033,11 +1088,10 @@ export default function App() {
                   <motion.button
                     initial={{ scale: 0.9, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
-                    onClick={handleClaimDailyReward}
-                    disabled={actionLoading === 'daily-reward'}
+                    onClick={() => setShowDailyRewardModal(true)}
                     className="absolute top-14 right-4 bg-crypto-gold text-black text-[9px] font-black px-3 py-1.5 rounded-full shadow-[0_4px_10px_rgba(251,191,36,0.3)] animate-pulse active:scale-95 z-20"
                   >
-                    {actionLoading === 'daily-reward' ? '⏳...' : '🎁 БОНУС'}
+                    🎁 БОНУС
                   </motion.button>
                 )}
                 
@@ -1381,17 +1435,107 @@ export default function App() {
                 )}
               </AnimatePresence>
 
+              <AnimatePresence>
+                {showDailyRewardModal && dailyReward && (
+                  <motion.div 
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-xl flex items-center justify-center px-6"
+                  >
+                    <motion.div 
+                      initial={{ scale: 0.9, y: 20 }}
+                      animate={{ scale: 1, y: 0 }}
+                      exit={{ scale: 0.9, y: 20 }}
+                      className="w-full max-w-sm glass-card p-8 border-white/10 relative overflow-hidden"
+                    >
+                      <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-crypto-gold via-white to-crypto-gold"></div>
+                      
+                      <div className="flex justify-between items-center mb-6">
+                        <div>
+                          <h3 className="text-xl font-black text-white">Daily Bonus</h3>
+                          <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Day {dailyReward.streak + (dailyReward.canClaim ? 1 : 0)}/7 Streak</p>
+                        </div>
+                        <button 
+                          onClick={() => setShowDailyRewardModal(false)}
+                          className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center font-bold text-white hover:bg-white/20 transition-colors"
+                        >
+                          ✕
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-4 gap-2 mb-8">
+                        {dailyReward.rewards.map((reward, i) => {
+                          const day = i + 1;
+                          const isClaimed = day <= dailyReward.streak;
+                          const isToday = dailyReward.canClaim && day === dailyReward.streak + 1;
+                          const isFuture = day > dailyReward.streak + (dailyReward.canClaim ? 1 : 0);
+
+                          return (
+                            <div 
+                              key={i} 
+                              className={`aspect-square flex flex-col items-center justify-center rounded-xl border transition-all ${
+                                isClaimed ? 'bg-crypto-emerald/10 border-crypto-emerald/30 opacity-50' :
+                                isToday ? 'bg-crypto-gold/20 border-crypto-gold shadow-[0_0_15px_rgba(251,191,36,0.2)]' :
+                                'bg-white/5 border-white/10'
+                              } ${i === 6 ? 'col-span-2 aspect-auto h-full' : ''}`}
+                            >
+                              <div className="text-[8px] font-black text-slate-500 uppercase mb-1">D{day}</div>
+                              {isClaimed ? (
+                                <Zap className="w-4 h-4 text-crypto-emerald" />
+                              ) : (
+                                <div className="text-xs font-black text-white">{reward.toLocaleString()}</div>
+                              )}
+                              {isToday && <div className="text-[6px] font-black text-crypto-gold mt-1 animate-pulse">READY</div>}
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      <div className="bg-white/5 rounded-2xl p-4 border border-white/5 mb-6">
+                        <p className="text-[11px] text-slate-300 leading-relaxed text-center font-medium">
+                          Заходи в игру каждый день, чтобы увеличивать свою награду! Если пропустишь день - прогресс сбросится.
+                        </p>
+                      </div>
+
+                      <button 
+                        onClick={handleClaimDailyReward}
+                        disabled={!dailyReward.canClaim || actionLoading === 'daily-reward'}
+                        className={`w-full py-4 text-sm font-black rounded-xl transition-all active:scale-95 ${
+                          dailyReward.canClaim 
+                            ? 'bg-crypto-gold text-black shadow-[0_8px_20px_rgba(251,191,36,0.3)] hover:shadow-[0_12px_25px_rgba(251,191,36,0.4)]' 
+                            : 'bg-white/10 text-white/30 cursor-not-allowed'
+                        }`}
+                      >
+                        {actionLoading === 'daily-reward' ? (
+                          <Loader2 className="w-5 h-5 animate-spin mx-auto" />
+                        ) : (
+                          dailyReward.canClaim ? 'ЗАБРАТЬ НАГРАДУ' : 'ПРИХОДИТЕ ЗАВТРА'
+                        )}
+                      </button>
+                    </motion.div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               {/* Slave Details Modal/Overlay */}
               <AnimatePresence>
                 {selectedSlave && (
                   <motion.div 
                     key="slave-details"
-                    initial={{ opacity: 0, y: 100 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 100 }}
-                    className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-end"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    onClick={() => setSelectedSlave(null)}
+                    className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-end"
                   >
-                    <div className="w-full bg-white dark:bg-[#1a1d23] rounded-t-[32px] p-8 space-y-6 border-t border-black/10 dark:border-white/10">
+                    <motion.div 
+                      initial={{ y: 200 }}
+                      animate={{ y: 0 }}
+                      exit={{ y: 200 }}
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-full bg-white dark:bg-[#1a1d23] rounded-t-[32px] p-8 space-y-6 border-t border-black/10 dark:border-white/10"
+                    >
                       <div className="flex justify-between items-center">
                         <div className="flex items-center gap-4">
                           <div className="w-14 h-14 rounded-full bg-crypto-gold/10 flex items-center justify-center">
@@ -1403,11 +1547,8 @@ export default function App() {
                           </div>
                         </div>
                         <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedSlave(null);
-                          }} 
-                          className="w-10 h-10 rounded-full bg-black/10 dark:bg-white/10 flex items-center justify-center font-bold text-slate-900 dark:text-white z-[60] active:scale-90 transition-transform"
+                          onClick={() => setSelectedSlave(null)} 
+                          className="w-10 h-10 rounded-full bg-black/10 dark:bg-white/10 flex items-center justify-center font-bold text-slate-900 dark:text-white z-[110] active:scale-90 transition-transform"
                         >
                           ✕
                         </button>
@@ -1449,7 +1590,7 @@ export default function App() {
                           ПРОДАТЬ (80% стоимости: {(selectedSlave.current_price * 0.8).toLocaleString()} монет)
                         </button>
                       </div>
-                    </div>
+                    </motion.div>
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -2153,6 +2294,19 @@ export default function App() {
                           >
                             Выйти
                           </button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3 mb-4">
+                          <button 
+                            onClick={copyClanLink}
+                            className="glass-card bg-crypto-gold/10 p-3 border-crypto-gold/20 flex items-center justify-center gap-2 group active:scale-[0.98] transition-all"
+                          >
+                            <UserPlus className="w-4 h-4 text-crypto-gold" />
+                            <span className="text-[10px] font-black uppercase text-crypto-gold">Пригласить</span>
+                          </button>
+                          <div className="glass-card bg-black/20 p-3 flex flex-col items-center justify-center">
+                              <div className="text-[8px] text-slate-500 font-bold uppercase mb-0.5">Участников</div>
+                              <div className="text-sm font-black text-white">{myClan.members.length} / 50</div>
+                          </div>
                         </div>
                         <div className="grid grid-cols-2 gap-3">
                           <div className="glass-card bg-black/20 p-3">
