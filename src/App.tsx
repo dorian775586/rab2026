@@ -81,6 +81,7 @@ interface LeaderboardUser {
   photo_url?: string | null;
   clan_id?: number | null;
   clan_name?: string | null;
+  slaves: MarketUser[];
 }
 
 interface ClanTop {
@@ -90,6 +91,15 @@ interface ClanTop {
   leader_username: string;
   total_balance: number;
   members_count: number;
+}
+
+interface ClanJoinRequest {
+  id: number;
+  clan_id: number;
+  user_id: string | number;
+  username: string;
+  photo_url: string | null;
+  status: string;
 }
 
 interface ClanInvite {
@@ -116,6 +126,7 @@ export default function App() {
   const [leaderboardType, setLeaderboardType] = useState<'players' | 'clans'>('players');
   const [clansTop, setClansTop] = useState<ClanTop[]>([]);
   const [myClan, setMyClan] = useState<any>(null);
+  const [clanRequests, setClanRequests] = useState<ClanJoinRequest[]>([]);
   const [clanInvites, setClanInvites] = useState<ClanInvite[]>([]);
   const [dailyReward, setDailyReward] = useState<{ canClaim: boolean, streak: number, nextReward: number } | null>(null);
   const [newClanName, setNewClanName] = useState('');
@@ -289,11 +300,68 @@ export default function App() {
         headers: { 'x-telegram-init-data': WebApp.initData || '' },
       });
       const data = await response.json();
-      if (response.ok) setMyClan(data);
+      if (response.ok) {
+        setMyClan(data);
+        if (data.inClan && data.clan.leader_id.toString() === data.members.find((m: any) => m.telegram_id.toString() === WebApp.initDataUnsafe.user?.id.toString())?.telegram_id.toString()) {
+          fetchClanRequests();
+        }
+      }
     } catch (err) {
       console.error('Fetch my clan error:', err);
     }
   }, [API_URL]);
+
+  const fetchClanRequests = async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/clans/requests`, {
+        headers: { 'x-telegram-init-data': WebApp.initData || '' },
+      });
+      const data = await response.json();
+      if (response.ok) setClanRequests(data);
+    } catch (err) {
+      console.error('Fetch clan requests error:', err);
+    }
+  };
+
+  const handleApplyToClan = async (clanId: number) => {
+    try {
+      const response = await fetch(`${API_URL}/api/clans/apply`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-telegram-init-data': WebApp.initData 
+        },
+        body: JSON.stringify({ clanId }),
+      });
+      const data = await response.json();
+      if (response.ok) {
+        WebApp.showAlert('Заявка подана!');
+      } else {
+        WebApp.showAlert(data.message || 'Ошибка подачи заявки');
+      }
+    } catch (err) {
+      WebApp.showAlert('Ошибка сети');
+    }
+  };
+
+  const respondToClanRequest = async (requestId: number, action: 'accept' | 'decline') => {
+    try {
+      const response = await fetch(`${API_URL}/api/clans/requests/respond`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-telegram-init-data': WebApp.initData 
+        },
+        body: JSON.stringify({ requestId, action }),
+      });
+      if (response.ok) {
+        fetchClanRequests();
+        fetchMyClan();
+      }
+    } catch (err) {
+      WebApp.showAlert('Ошибка сети');
+    }
+  };
 
   const fetchClanInvites = useCallback(async () => {
     try {
@@ -1502,34 +1570,37 @@ export default function App() {
                         </div>
                       </div>
 
-                      <div className="space-y-4">
-                        <h4 className="text-sm font-black uppercase tracking-widest text-slate-500">Рабы игрока ({viewingProfile.slaves.length})</h4>
-                        <div className="space-y-3">
-                          {viewingProfile.slaves.map(slave => (
-                            <div key={slave.telegram_id} className="glass-card p-4 flex justify-between items-center">
-                              <div className="flex items-center gap-3">
-                                <div className={`w-8 h-8 rounded-full bg-white/5 flex items-center justify-center border overflow-hidden ${Boolean(slave.has_gold_frame) ? 'border-crypto-gold ring-1 ring-crypto-gold/50' : 'border-white/10'}`}>
-                                  {slave.photo_url ? (
-                                      <img src={slave.photo_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                                  ) : (
-                                      <User className="w-4 h-4 text-slate-500" />
-                                  )}
+                        <div className="space-y-4">
+                          <h4 className="text-sm font-black uppercase tracking-widest text-slate-500">Рабы игрока ({viewingProfile.slaves.length})</h4>
+                          <div className="space-y-3">
+                            {viewingProfile.slaves.map(slave => (
+                              <div key={slave.telegram_id} className="glass-card p-4 flex justify-between items-center gap-4">
+                                <div className="flex items-center gap-3 min-w-0 flex-1">
+                                  <div className={`w-8 h-8 rounded-full bg-white/5 flex items-center justify-center border overflow-hidden shrink-0 ${Boolean(slave.has_gold_frame) ? 'border-crypto-gold ring-1 ring-crypto-gold/50' : 'border-white/10'}`}>
+                                    {slave.photo_url ? (
+                                        <img src={slave.photo_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                    ) : (
+                                        <User className="w-4 h-4 text-slate-500" />
+                                    )}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <div className={`font-bold text-sm flex items-center gap-1 truncate ${Boolean(slave.has_rainbow_name) ? 'rainbow-text' : ''}`}>
+                                      {slave.username}
+                                      {Boolean(slave.has_gold_frame) && <Crown className="w-3 h-3 text-crypto-gold" />}
+                                    </div>
+                                    <div className="text-[10px] text-slate-500 font-bold uppercase">Уровень {slave.level} • {slave.base_income} / мин</div>
+                                  </div>
                                 </div>
-                                <span className={`font-bold flex items-center gap-1 ${Boolean(slave.has_rainbow_name) ? 'rainbow-text' : ''}`}>
-                                  {slave.username}
-                                  {Boolean(slave.has_gold_frame) && <Crown className="w-3 h-3 text-crypto-gold" />}
-                                </span>
+                                <button 
+                                  onClick={() => handleBuy(slave.telegram_id)}
+                                  className="emerald-button text-[10px] py-2 px-4 shrink-0 shadow-lg shadow-crypto-emerald/10"
+                                >
+                                  ВЫКУПИТЬ ({(slave.current_price * 2).toLocaleString()})
+                                </button>
                               </div>
-                              <button 
-                                onClick={() => handleBuy(slave.telegram_id)}
-                                className="emerald-button text-[10px] py-2 px-4"
-                              >
-                                КУПИТЬ ({(slave.current_price * 2).toLocaleString()})
-                              </button>
-                            </div>
-                          ))}
+                            ))}
+                          </div>
                         </div>
-                      </div>
 
                       <div className="space-y-3">
                         {myClan?.inClan && viewingProfile.telegram_id.toString() !== user?.telegram_id.toString() && !viewingProfile.clan_id && (
@@ -1921,7 +1992,7 @@ export default function App() {
                 </div>
 
                 {/* Invitations Alert */}
-                {clanInvites.length > 0 && (
+                {clanInvites.length > 0 && leaderboardType === 'players' && (
                   <div className="space-y-2">
                     {clanInvites.map(invite => (
                       <motion.div 
@@ -1931,7 +2002,7 @@ export default function App() {
                         className="p-4 rounded-2xl bg-crypto-gold/10 border border-crypto-gold/30 flex items-center justify-between gap-4"
                       >
                         <div className="flex items-center gap-3">
-                          <Crown className="w-5 h-5 text-crypto-gold" />
+                          <Shield className="w-5 h-5 text-crypto-gold" />
                           <div className="text-sm">
                             <div className="font-bold">Клан {invite.clan.name}</div>
                             <div className="text-[10px] text-slate-500 uppercase font-black">Приглашение</div>
@@ -1947,6 +2018,42 @@ export default function App() {
                           <button 
                             onClick={() => respondToInvite(invite.id, 'decline')}
                             className="bg-white/5 border border-white/10 text-[10px] font-black px-3 py-1.5 rounded-lg active:scale-95 transition-transform"
+                          >
+                            НЕТ
+                          </button>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Clan Requests for Leader */}
+                {clanRequests.length > 0 && leaderboardType === 'clans' && myClan?.inClan && myClan.clan.leader_id.toString() === (user?.telegram_id || '').toString() && (
+                  <div className="space-y-2">
+                    <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">Заявки в клан ({clanRequests.length})</div>
+                    {clanRequests.map(req => (
+                      <motion.div 
+                        initial={{ scale: 0.9, opacity: 0 }} 
+                        animate={{ scale: 1, opacity: 1 }}
+                        key={req.id} 
+                        className="p-3 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-between gap-4"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-crypto-gold/10 border border-crypto-gold/30 overflow-hidden">
+                            {req.photo_url ? <img src={req.photo_url} alt="" className="w-full h-full object-cover" /> : <User className="w-4 h-4 text-crypto-gold mx-auto mt-2" />}
+                          </div>
+                          <div className="text-sm font-bold">{req.username}</div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button 
+                            onClick={() => respondToClanRequest(req.id, 'accept')}
+                            className="bg-crypto-emerald text-white text-[10px] font-black px-3 py-1.5 rounded-lg"
+                          >
+                            ДА
+                          </button>
+                          <button 
+                            onClick={() => respondToClanRequest(req.id, 'decline')}
+                            className="bg-white/5 border border-white/10 text-[10px] font-black px-3 py-1.5 rounded-lg"
                           >
                             НЕТ
                           </button>
@@ -1978,7 +2085,7 @@ export default function App() {
                     <div 
                       key={player.telegram_id}
                       onClick={() => fetchProfile(player.telegram_id)}
-                      className={`glass-card p-4 flex items-center gap-4 border-white/5 ${player.telegram_id.toString() === user?.telegram_id.toString() ? 'border-crypto-gold/30 bg-crypto-gold/5' : ''}`}
+                      className={`glass-card p-4 flex items-center gap-4 border-white/5 active:scale-[0.98] transition-all cursor-pointer ${player.telegram_id.toString() === user?.telegram_id.toString() ? 'border-crypto-gold/30 bg-crypto-gold/5' : ''}`}
                     >
                       <div className="w-8 flex justify-center flex-shrink-0">
                         {index === 0 ? <Crown className="w-6 h-6 text-crypto-gold" /> : 
@@ -2020,84 +2127,127 @@ export default function App() {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {/* Clan Management Section */}
-                  <div className="glass-card p-6 border-crypto-gold/20 bg-gradient-to-br from-crypto-gold/5 to-transparent relative overflow-hidden group">
-                    <div className="absolute top-0 right-0 w-32 h-32 bg-crypto-gold/5 rounded-full blur-3xl -mr-16 -mt-16 group-hover:bg-crypto-gold/10 transition-all duration-700" />
-                    
-                    {myClan?.inClan ? (
-                      <div className="relative z-10 flex items-center justify-between">
-                        <div className="flex items-center gap-4">
-                          <div className="w-12 h-12 rounded-2xl bg-crypto-gold/20 border border-crypto-gold/30 flex items-center justify-center">
-                            <Shield className="w-6 h-6 text-crypto-gold" />
+                  {/* Clan List or My Clan Details */}
+                  {myClan?.inClan ? (
+                    <div className="glass-card overflow-hidden border-crypto-gold/20">
+                      <div className="p-6 bg-gradient-to-br from-crypto-gold/10 to-transparent border-b border-white/5">
+                        <div className="flex items-center justify-between mb-4">
+                          <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 rounded-2xl bg-crypto-gold/20 flex items-center justify-center">
+                              <Shield className="w-6 h-6 text-crypto-gold" />
+                            </div>
+                            <div>
+                              <h3 className="text-xl font-black text-white">{myClan.clan.name}</h3>
+                              <div className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Участников: {myClan.members.length}</div>
+                            </div>
                           </div>
-                          <div>
-                            <div className="text-xs text-slate-500 font-bold uppercase tracking-[0.2em] mb-0.5">Твой клан</div>
-                            <h3 className="text-xl font-black text-white">{myClan.clan.name}</h3>
+                          <button 
+                            onClick={async () => {
+                              if (window.confirm('Покинуть клан?')) {
+                                await fetch(`${API_URL}/api/clans/leave`, { method: 'POST', headers: { 'x-telegram-init-data': WebApp.initData || '' } });
+                                fetchMyClan();
+                                fetchUser();
+                              }
+                            }}
+                            className="text-[10px] text-red-400 font-black uppercase tracking-widest border border-red-500/20 px-3 py-1.5 rounded-lg"
+                          >
+                            Выйти
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="glass-card bg-black/20 p-3">
+                              <div className="text-[8px] text-slate-500 font-bold uppercase mb-1">Общий банк</div>
+                              <div className="text-sm font-black text-crypto-gold">{myClan.members.reduce((acc: number, m: any) => acc + (m.balance || 0), 0).toLocaleString()} 🟡</div>
+                          </div>
+                          <div className="glass-card bg-black/20 p-3">
+                              <div className="text-[8px] text-slate-500 font-bold uppercase mb-1">Лидер</div>
+                              <div className="text-sm font-black text-white truncate">{myClan.members.find((m: any) => m.telegram_id.toString() === myClan.clan.leader_id.toString())?.username || '---'}</div>
                           </div>
                         </div>
-                        <button 
-                          onClick={async () => {
-                            if (window.confirm('Покинуть клан?')) {
-                              await fetch(`${API_URL}/api/clans/leave`, { method: 'POST', headers: { 'x-telegram-init-data': WebApp.initData || '' } });
-                              fetchMyClan();
-                              fetchUser();
-                            }
-                          }}
-                          className="text-[10px] text-red-400 font-black hover:text-red-300 transition-colors uppercase tracking-widest border border-red-500/20 px-3 py-1.5 rounded-lg"
-                        >
-                          Покинуть
-                        </button>
                       </div>
-                    ) : (
-                      <div className="relative z-10 space-y-4">
-                        <div className="flex items-center gap-4">
-                          <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center">
-                            <Plus className="w-6 h-6 text-crypto-gold" />
-                          </div>
-                          <div>
-                            <div className="text-xs text-slate-500 font-bold uppercase tracking-[0.2em] mb-0.5">Создай свою империю</div>
-                            <h3 className="text-xl font-black text-white">Нет клана</h3>
-                          </div>
-                        </div>
-                        <button 
-                          onClick={() => setIsClanModalOpen(true)}
-                          className="gold-button w-full py-3.5 text-xs font-black uppercase tracking-widest shadow-[0_10px_20px_rgba(251,191,36,0.1)] active:scale-[0.98]"
-                        >
-                          СОЗДАТЬ КЛАН ЗА 10.000 🟡
-                        </button>
+                      
+                      <div className="p-4 space-y-2">
+                        <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-2 mb-2">Участники (Топ по монетам)</div>
+                        {[...myClan.members].sort((a, b) => {
+                           if (a.telegram_id.toString() === myClan.clan.leader_id.toString()) return -1;
+                           if (b.telegram_id.toString() === myClan.clan.leader_id.toString()) return 1;
+                           return (b.balance || 0) - (a.balance || 0);
+                        }).map((member, i) => (
+                           <div 
+                            key={member.telegram_id} 
+                            onClick={() => fetchProfile(member.telegram_id)}
+                            className={`flex items-center justify-between p-3 rounded-xl border border-white/5 bg-white/5 active:scale-[0.98] transition-all cursor-pointer ${member.telegram_id.toString() === myClan.clan.leader_id.toString() ? 'border-crypto-gold/20 bg-crypto-gold/5' : ''}`}
+                           >
+                             <div className="flex items-center gap-3">
+                               <div className="w-8 h-8 rounded-full overflow-hidden border border-white/10 bg-black/20 flex-shrink-0">
+                                 {member.photo_url ? <img src={member.photo_url} alt="" className="w-full h-full object-cover" /> : <User className="w-4 h-4 text-slate-700 mx-auto mt-2" />}
+                               </div>
+                               <div className="min-w-0">
+                                 <div className={`text-sm font-bold flex items-center gap-1 truncate ${member.has_rainbow_name ? 'rainbow-text' : ''}`}>
+                                   {member.username}
+                                   {member.telegram_id.toString() === myClan.clan.leader_id.toString() && <Crown className="w-3 h-3 text-crypto-gold shrink-0" />}
+                                 </div>
+                                 <div className="text-[9px] text-slate-500 uppercase font-black">Rank #{i+1}</div>
+                               </div>
+                             </div>
+                             <div className="font-black text-crypto-gold text-sm">{Math.floor(member.balance || 0).toLocaleString()}</div>
+                           </div>
+                        ))}
                       </div>
-                    )}
-                  </div>
+                    </div>
+                  ) : (
+                    <div className="glass-card p-6 border-crypto-gold/20 bg-gradient-to-br from-crypto-gold/5 to-transparent flex items-center justify-between">
+                       <div className="flex items-center gap-4">
+                         <div className="w-12 h-12 rounded-2xl bg-crypto-gold/20 border border-crypto-gold/30 flex items-center justify-center">
+                           <Shield className="w-6 h-6 text-crypto-gold" />
+                         </div>
+                         <div>
+                           <div className="text-xs text-slate-500 font-bold uppercase tracking-[0.2em] mb-0.5">Создай свою империю</div>
+                           <h3 className="text-lg font-black text-white">Нет клана</h3>
+                         </div>
+                       </div>
+                       <button 
+                         onClick={() => setIsClanModalOpen(true)}
+                         className="gold-button py-2.5 px-6 text-[10px] font-black uppercase tracking-widest shadow-[0_10px_20px_rgba(251,191,36,0.1)] active:scale-[0.98]"
+                       >
+                         СОЗДАТЬ
+                       </button>
+                    </div>
+                  )}
 
+                  {/* All Clans List */}
                   <div className="space-y-3">
+                    <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">Мировой топ кланов</div>
                     {clansTop.map((clan, index) => (
-                      <div key={clan.clan_id} className="glass-card p-5 border-white/5 flex items-center gap-5 relative group overflow-hidden">
-                        <div className="w-8 flex justify-center flex-shrink-0 z-10">
-                          {index === 0 ? <Crown className="w-6 h-6 text-crypto-gold drop-shadow-[0_0_10px_rgba(251,191,36,0.5)]" /> : 
-                           <div className="text-slate-500 font-black italic opacity-50">{index + 1}</div>}
-                        </div>
-                        
-                        <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-white/10 to-white/5 border border-white/10 flex items-center justify-center flex-shrink-0 group-hover:border-crypto-gold/30 transition-colors duration-500">
-                          <Shield className="w-6 h-6 text-crypto-gold/80" />
-                        </div>
+                      <div key={clan.clan_id} className="glass-card p-4 border-white/5 flex flex-col gap-4 relative group overflow-hidden transition-all">
+                        <div className="flex items-center gap-4">
+                          <div className="w-8 flex justify-center flex-shrink-0">
+                            {index === 0 ? <Crown className="w-5 h-5 text-crypto-gold" /> : 
+                             <div className="text-slate-500 font-black text-xs opacity-50">{index + 1}</div>}
+                          </div>
+                          
+                          <div className="flex-1 min-w-0">
+                             <h4 className="font-black text-base text-white truncate">{clan.clan_name}</h4>
+                             <div className="flex items-center gap-3 mt-0.5 text-[9px] text-slate-500 font-bold uppercase">
+                               <span className="flex items-center gap-1"><User className="w-2.5 h-2.5" /> {clan.members_count}</span>
+                               <span className="flex items-center gap-1"><Shield className="w-2.5 h-2.5" /> {clan.leader_username}</span>
+                             </div>
+                          </div>
 
-                        <div className="flex-1 min-w-0 z-10">
-                          <h4 className="font-black text-lg text-white truncate group-hover:text-crypto-gold transition-colors">{clan.clan_name}</h4>
-                          <div className="flex items-center gap-3 mt-1">
-                            <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider flex items-center gap-1">
-                              <User className="w-2.5 h-2.5" /> {clan.members_count}
-                            </div>
-                            <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider flex items-center gap-1">
-                              <Crown className="w-2.5 h-2.5" /> {clan.leader_username}
-                            </div>
+                          <div className="text-right flex-shrink-0">
+                            <div className="text-sm font-black text-crypto-gold">{Math.floor(clan.total_balance).toLocaleString()}</div>
+                            <div className="text-[8px] text-slate-500 font-black uppercase">Баланс</div>
                           </div>
                         </div>
 
-                        <div className="text-right flex-shrink-0 z-10">
-                          <div className="text-lg font-black text-crypto-gold tracking-tight">{Math.floor(clan.total_balance).toLocaleString()}</div>
-                          <div className="text-[8px] text-slate-500 font-black uppercase tracking-[0.2em]">Баланс клана</div>
-                        </div>
-                        <div className="absolute inset-0 bg-gradient-to-r from-crypto-gold/0 via-crypto-gold/0 to-crypto-gold/5 translate-x-full group-hover:translate-x-0 transition-transform duration-700" />
+                        {!myClan?.inClan && (
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); handleApplyToClan(clan.clan_id); }}
+                            className="w-full py-2.5 rounded-xl border border-white/10 text-[10px] font-black uppercase tracking-widest hover:bg-white/5 transition-all text-slate-300"
+                          >
+                            Подать заявку
+                          </button>
+                        )}
                       </div>
                     ))}
                   </div>

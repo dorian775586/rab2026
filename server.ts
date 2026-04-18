@@ -548,6 +548,80 @@ app.post("/api/buy-coins", validateTelegram, async (req, res) => {
 });
 
 // Buy endpoint: Call the RPC function
+app.post("/api/clans/apply", validateTelegram, async (req, res) => {
+  const tgUser = (req as any).tgUser;
+  const { clanId } = req.body;
+  try {
+    const { data: user } = await supabase.from("users").select("clan_id, username, photo_url").eq("telegram_id", tgUser.id.toString()).single();
+    if (user?.clan_id) return res.status(400).json({ success: false, message: "Вы уже в клане" });
+
+    const { error } = await supabase.from("clan_requests").insert({
+      clan_id: clanId,
+      user_id: tgUser.id.toString(),
+      username: user?.username || "Unknown",
+      photo_url: user?.photo_url || null,
+      status: 'pending'
+    });
+
+    if (error) {
+      if (error.code === '23505') return res.status(400).json({ success: false, message: "Заявка уже подана" });
+      throw error;
+    }
+
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+app.get("/api/clans/requests", validateTelegram, async (req, res) => {
+  const tgUser = (req as any).tgUser;
+  try {
+    const { data: clan } = await supabase.from("clans").select("id").eq("leader_id", tgUser.id.toString()).single();
+    if (!clan) return res.status(403).json({ success: false, message: "Вы не лидер клана" });
+
+    const { data, error } = await supabase
+      .from("clan_requests")
+      .select("*")
+      .eq("clan_id", clan.id)
+      .eq("status", "pending");
+    
+    if (error) throw error;
+    res.json(data);
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+app.post("/api/clans/requests/respond", validateTelegram, async (req, res) => {
+  const tgUser = (req as any).tgUser;
+  const { requestId, action } = req.body; // action: 'accept' or 'decline'
+  try {
+    const { data: request } = await supabase.from("clan_requests").select("*").eq("id", requestId).single();
+    if (!request) return res.status(404).json({ success: false, message: "Заявка не найдена" });
+
+    const { data: clan } = await supabase.from("clans").select("id, leader_id").eq("id", request.clan_id).single();
+    if (clan?.leader_id.toString() !== tgUser.id.toString()) {
+        return res.status(403).json({ success: false, message: "Вы не лидер клана" });
+    }
+
+    if (action === 'accept') {
+      await supabase.from("users").update({ clan_id: request.clan_id }).eq("telegram_id", request.user_id);
+      await supabase.from("clan_requests").update({ status: 'accepted' }).eq("id", requestId);
+      // Deny other requests from this user
+      await supabase.from("clan_requests").delete().eq("user_id", request.user_id).neq("id", requestId);
+      // Remove invites for this user
+      await supabase.from("clan_invites").delete().eq("invitee_id", request.user_id);
+    } else {
+      await supabase.from("clan_requests").update({ status: 'declined' }).eq("id", requestId);
+    }
+
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 app.post("/api/buy", validateTelegram, async (req, res) => {
   const tgUser = (req as any).tgUser;
   const { targetId } = req.body;
