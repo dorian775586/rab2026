@@ -104,7 +104,7 @@ interface ClanInvite {
 type Tab = 'profile' | 'slaves' | 'market' | 'games' | 'shop' | 'leaderboard';
 
 export default function App() {
-  const API_URL = 'https://rab2026.onrender.com';
+  const API_URL = typeof window !== 'undefined' ? window.location.origin : '';
   const [activeTab, setActiveTab] = useState<Tab>('profile');
   const [user, setUser] = useState<UserData | null>(null);
   const [displayBalance, setDisplayBalance] = useState(0);
@@ -188,7 +188,7 @@ export default function App() {
   const fetchUser = useCallback(async () => {
     try {
       const startParam = WebApp.initDataUnsafe.start_param;
-      const response = await fetch(API_URL + '/api/sync', {
+      const response = await fetch(`${API_URL}/api/sync`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -209,7 +209,7 @@ export default function App() {
 
   const fetchSlaves = useCallback(async () => {
     try {
-      const response = await fetch(API_URL + '/api/slaves', {
+      const response = await fetch(`${API_URL}/api/slaves`, {
         headers: { 'x-telegram-init-data': WebApp.initData },
       });
       const data = await response.json();
@@ -252,7 +252,7 @@ export default function App() {
 
   const fetchMyListings = useCallback(async () => {
     try {
-      const response = await fetch(API_URL + '/api/market/my-listings', {
+      const response = await fetch(`${API_URL}/api/market/my-listings`, {
         headers: { 'x-telegram-init-data': WebApp.initData },
       });
       const data = await response.json();
@@ -264,7 +264,7 @@ export default function App() {
 
   const fetchGlobals = useCallback(async () => {
     try {
-      const response = await fetch(API_URL + '/api/globals');
+      const response = await fetch(`${API_URL}/api/globals`);
       const data = await response.json();
       if (response.ok) setGlobals(data);
     } catch (err) {
@@ -274,7 +274,7 @@ export default function App() {
 
   const fetchClansTop = useCallback(async () => {
     try {
-      const response = await fetch(API_URL + '/api/clans/top');
+      const response = await fetch(`${API_URL}/api/clans/top`);
       const data = await response.json();
       if (response.ok) setClansTop(data);
     } catch (err) {
@@ -284,8 +284,8 @@ export default function App() {
 
   const fetchMyClan = useCallback(async () => {
     try {
-      const response = await fetch(API_URL + '/api/clans/my', {
-        headers: { 'x-telegram-init-data': WebApp.initData },
+      const response = await fetch(`${API_URL}/api/clans/my`, {
+        headers: { 'x-telegram-init-data': WebApp.initData || '' },
       });
       const data = await response.json();
       if (response.ok) setMyClan(data);
@@ -296,8 +296,8 @@ export default function App() {
 
   const fetchClanInvites = useCallback(async () => {
     try {
-      const response = await fetch(API_URL + '/api/clans/invites', {
-        headers: { 'x-telegram-init-data': WebApp.initData },
+      const response = await fetch(`${API_URL}/api/clans/invites`, {
+        headers: { 'x-telegram-init-data': WebApp.initData || '' },
       });
       const data = await response.json();
       if (response.ok) setClanInvites(data);
@@ -308,7 +308,7 @@ export default function App() {
 
   const fetchLeaderboard = useCallback(async () => {
     try {
-      const response = await fetch(API_URL + '/api/leaderboard', {
+      const response = await fetch(`${API_URL}/api/leaderboard`, {
         headers: { 'x-telegram-init-data': WebApp.initData },
       });
       const data = await response.json();
@@ -320,7 +320,7 @@ export default function App() {
 
   const fetchSpinHistory = useCallback(async () => {
     try {
-      const response = await fetch(API_URL + '/api/spin-history');
+      const response = await fetch(`${API_URL}/api/spin-history`);
       const data = await response.json();
       if (response.ok) setSpinHistory(data);
     } catch (err) {
@@ -382,11 +382,11 @@ export default function App() {
 
     setActionLoading(targetId);
     try {
-      const response = await fetch(API_URL + '/api/buy', {
+      const response = await fetch(`${API_URL}/api/buy`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-telegram-init-data': WebApp.initData,
+          'x-telegram-init-data': WebApp.initData || '',
         },
         body: JSON.stringify({ targetId }),
       });
@@ -428,7 +428,7 @@ export default function App() {
 
     setActionLoading(slaveId);
     try {
-      const response = await fetch(API_URL + '/api/market/buy', {
+      const response = await fetch(`${API_URL}/api/market/buy`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -471,7 +471,7 @@ export default function App() {
 
     setActionLoading(`upgrade-${targetId}`);
     try {
-      const response = await fetch(API_URL + '/api/upgrade', {
+      const response = await fetch(`${API_URL}/api/upgrade`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -497,7 +497,7 @@ export default function App() {
   const handleSellSlave = async (slaveId: string | number) => {
     setActionLoading(`sell-${slaveId}`);
     try {
-      const response = await fetch(API_URL + '/api/sell', {
+      const response = await fetch(`${API_URL}/api/sell`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -537,7 +537,7 @@ export default function App() {
     setSpinResult(null);
     
     try {
-      const response = await fetch(API_URL + '/api/spin', {
+      const response = await fetch(`${API_URL}/api/spin`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -610,7 +610,7 @@ export default function App() {
   const handleShopBuy = async (itemType: string, itemId: string, additionalData: any = {}) => {
     setActionLoading(`buy-${itemType}-${itemId}`);
     try {
-      const response = await fetch(API_URL + '/api/create-stars-invoice', {
+      const response = await fetch(`${API_URL}/api/create-stars-invoice`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -645,7 +645,7 @@ export default function App() {
 
   const inviteToClan = async (targetId: string | number) => {
     try {
-      const response = await fetch(API_URL + '/api/clans/invite', {
+      const response = await fetch(`${API_URL}/api/clans/invite`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -666,7 +666,7 @@ export default function App() {
 
   const respondToInvite = async (inviteId: number, action: 'accept' | 'decline') => {
     try {
-      const response = await fetch(API_URL + '/api/clans/invites/respond', {
+      const response = await fetch(`${API_URL}/api/clans/invites/respond`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -687,7 +687,7 @@ export default function App() {
   const handleBuyGhost = async () => {
     setActionLoading('ghost');
     try {
-      const response = await fetch(API_URL + '/api/buy-ghost', {
+      const response = await fetch(`${API_URL}/api/buy-ghost`, {
         method: 'POST',
         headers: { 'x-telegram-init-data': WebApp.initData },
       });
@@ -706,7 +706,7 @@ export default function App() {
   const handleBuyPremium = async () => {
     setActionLoading('premium');
     try {
-      const response = await fetch(API_URL + '/api/buy-premium', {
+      const response = await fetch(`${API_URL}/api/buy-premium`, {
         method: 'POST',
         headers: { 'x-telegram-init-data': WebApp.initData },
       });
@@ -725,7 +725,7 @@ export default function App() {
   const handleBuyGhostShort = async () => {
     setActionLoading('ghost-short');
     try {
-      const response = await fetch(API_URL + '/api/buy-ghost-short', {
+      const response = await fetch(`${API_URL}/api/buy-ghost-short`, {
         method: 'POST',
         headers: { 'x-telegram-init-data': WebApp.initData },
       });
@@ -748,7 +748,7 @@ export default function App() {
     if (!listingSlaveId || !listingPrice) return;
     setActionLoading('listing');
     try {
-      const response = await fetch(API_URL + '/api/market/list', {
+      const response = await fetch(`${API_URL}/api/market/list`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -785,7 +785,7 @@ export default function App() {
   const handleUnlist = async (slaveId: string | number) => {
     setActionLoading(`unlist-${slaveId}`);
     try {
-      const response = await fetch(API_URL + '/api/market/unlist', {
+      const response = await fetch(`${API_URL}/api/market/unlist`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -808,7 +808,7 @@ export default function App() {
   const handleBuySlot = async () => {
     setActionLoading('buy-slot');
     try {
-      const response = await fetch(API_URL + '/api/buy-slot', {
+      const response = await fetch(`${API_URL}/api/buy-slot`, {
         method: 'POST',
         headers: { 'x-telegram-init-data': WebApp.initData },
       });
@@ -1950,7 +1950,7 @@ export default function App() {
                         <button 
                           onClick={async () => {
                             if (window.confirm('Покинуть клан?')) {
-                              await fetch(API_URL + '/api/clans/leave', { method: 'POST', headers: { 'x-telegram-init-data': WebApp.initData } });
+                              await fetch(`${API_URL}/api/clans/leave`, { method: 'POST', headers: { 'x-telegram-init-data': WebApp.initData || '' } });
                               fetchMyClan();
                               fetchUser();
                             }
