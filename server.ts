@@ -95,11 +95,13 @@ async function applyShopReward(userId: string, itemType: string, itemId: string)
 async function getFullUser(telegramId: string) {
   const { data: user, error } = await supabase
     .from("users")
-    .select("*, owner:owner_id(username)")
+    .select("*, owner:owner_id(username), clan:clans(name)")
     .eq("telegram_id", telegramId)
     .single();
 
   if (error) throw error;
+  
+  const clan_name = (user as any).clan?.name || null;
 
   const { data: allSlaves } = await supabase
     .from("users")
@@ -137,6 +139,7 @@ async function getFullUser(telegramId: string) {
 
   return {
     ...user,
+    clan_name,
     slaves_count: slavesCount,
     total_income: Math.floor(totalIncome * totalMultiplier)
   };
@@ -322,11 +325,18 @@ app.post("/api/sync", validateTelegram, async (req, res) => {
     // Get user from DB
     let { data: user, error } = await supabase
       .from("users")
-      .select("*, owner:owner_id(username)")
+      .select("*, owner:owner_id(username), clan:clans(name)")
       .eq("telegram_id", BigInt(id).toString())
       .maybeSingle();
 
     if (!user) {
+      // ... existing user creation logic ...
+      // Handle clan join from startParam
+      let initialClanId = null;
+      if (startParam && startParam.startsWith('clan_')) {
+        const clanIdStr = startParam.replace('clan_', '');
+        initialClanId = parseInt(clanIdStr);
+      }
       // User doesn't exist, create them
       console.log(`[Sync] Creating new user: ${id}`);
       
@@ -359,11 +369,12 @@ app.post("/api/sync", validateTelegram, async (req, res) => {
           username: username || `User_${id}`,
           photo_url: photo_url || null,
           owner_id: inviterId ? BigInt(inviterId).toString() : null,
+          clan_id: initialClanId || null,
           balance: 500, // Даем 500 монет новым игрокам для старта
           base_income: 0,
           current_price: 50
         }])
-        .select("*, owner:owner_id(username)")
+        .select("*, owner:owner_id(username), clan:clans(name)")
         .single();
       
       if (createError) {
@@ -407,6 +418,18 @@ app.post("/api/sync", validateTelegram, async (req, res) => {
           last_collect_time: now.toISOString()
         })
         .eq("telegram_id", BigInt(id).toString());
+    }
+
+    // If existing user opens clan link and is NOT in a clan, add them
+    if (user && !user.clan_id && startParam && startParam.startsWith('clan_')) {
+      const clanIdStr = startParam.replace('clan_', '');
+      const clanId = parseInt(clanIdStr);
+      if (!isNaN(clanId)) {
+        await supabase
+          .from("users")
+          .update({ clan_id: clanId })
+          .eq("telegram_id", BigInt(id).toString());
+      }
     }
 
     const fullUser = await getFullUser(BigInt(id).toString());
@@ -878,7 +901,7 @@ app.get("/api/profile/:id", async (req, res) => {
   try {
     const { data: user, error: userError } = await supabase
       .from("users")
-      .select("telegram_id, username, balance, current_price, base_income, level, ghost_until, has_rainbow_name, has_gold_frame, photo_url")
+      .select("telegram_id, username, balance, current_price, base_income, level, ghost_until, has_rainbow_name, has_gold_frame, photo_url, clan_id, clan:clans(name)")
       .eq("telegram_id", targetId)
       .single();
     
@@ -891,7 +914,7 @@ app.get("/api/profile/:id", async (req, res) => {
     
     if (slavesError) throw slavesError;
 
-    res.json({ ...user, slaves });
+    res.json({ ...user, clan_name: (user as any).clan?.name || null, slaves });
   } catch (err: any) {
     res.status(500).json({ success: false, message: err.message });
   }

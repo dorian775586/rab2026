@@ -207,6 +207,13 @@ export default function App() {
     WebApp.HapticFeedback.notificationOccurred('success');
   };
 
+  const shareClanLink = () => {
+    if (!myClan || !myClan.inClan) return;
+    const link = `https://t.me/${botUsername}/app?startapp=clan_${myClan.clan.id}`;
+    const text = `Вступай в мой клан ${myClan.clan.name} в Crypto Slaves! 🛡️💎`;
+    WebApp.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`);
+  };
+
   const handleJoinClanLink = async (clanId: string) => {
     try {
       const response = await fetch(`${API_URL}/api/clans/join`, {
@@ -1432,106 +1439,6 @@ export default function App() {
                   </div>
                 ))}
               </div>
-
-              {/* Profile View Modal */}
-              <AnimatePresence>
-                {viewingProfile && (
-                  <motion.div 
-                    initial={{ opacity: 0, y: 100 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 100 }}
-                    className="fixed inset-0 z-[70] bg-black/95 backdrop-blur-2xl flex items-end"
-                  >
-                    <div className="w-full bg-[var(--crypto-bg)] rounded-t-[32px] p-8 space-y-6 border-t border-white/10 max-h-[90vh] overflow-y-auto">
-                      <div className="flex justify-between items-center">
-                        <div className="flex items-center gap-4">
-                          <div className={`w-14 h-14 rounded-full bg-crypto-gold/10 flex items-center justify-center overflow-hidden border ${Boolean(viewingProfile.has_gold_frame) ? 'border-crypto-gold ring-4 ring-crypto-gold/30' : 'border-white/10'}`}>
-                            {viewingProfile.photo_url ? (
-                              <img src={viewingProfile.photo_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                            ) : (
-                              <User className="w-8 h-8 text-crypto-gold" />
-                            )}
-                          </div>
-                          <div>
-                            <h3 className="text-2xl font-black flex items-center gap-2">
-                              <span className={Boolean(viewingProfile.has_rainbow_name) ? 'rainbow-text' : ''}>
-                                {viewingProfile.username}
-                              </span>
-                              {Boolean(viewingProfile.has_gold_frame) && <Crown className="w-5 h-5 text-crypto-gold drop-shadow-lg" />}
-                            </h3>
-                            <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">Уровень {viewingProfile.level}</p>
-                          </div>
-                        </div>
-                        <button onClick={() => setViewingProfile(null)} className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center font-bold">✕</button>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="glass-card p-4">
-                          <span className="text-[10px] text-slate-500 font-bold uppercase">Баланс</span>
-                          <div className="text-xl font-black text-crypto-gold">{viewingProfile.balance.toLocaleString()}</div>
-                        </div>
-                        <div className="glass-card p-4">
-                          <span className="text-[10px] text-slate-500 font-bold uppercase">Доход</span>
-                          <div className="text-xl font-black text-crypto-emerald">+{viewingProfile.base_income} / мин</div>
-                        </div>
-                      </div>
-
-                        <div className="space-y-4">
-                          <h4 className="text-sm font-black uppercase tracking-widest text-slate-500">Рабы игрока ({viewingProfile.slaves.length})</h4>
-                          <div className="space-y-3">
-                            {viewingProfile.slaves.map(slave => (
-                              <div key={slave.telegram_id} className="glass-card p-4 flex justify-between items-center gap-4">
-                                <div className="flex items-center gap-3 min-w-0 flex-1">
-                                  <div className={`w-8 h-8 rounded-full bg-white/5 flex items-center justify-center border overflow-hidden shrink-0 ${Boolean(slave.has_gold_frame) ? 'border-crypto-gold ring-1 ring-crypto-gold/50' : 'border-white/10'}`}>
-                                    {slave.photo_url ? (
-                                        <img src={slave.photo_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                                    ) : (
-                                        <User className="w-4 h-4 text-slate-500" />
-                                    )}
-                                  </div>
-                                  <div className="min-w-0">
-                                    <div className={`font-bold text-sm flex items-center gap-1 truncate ${Boolean(slave.has_rainbow_name) ? 'rainbow-text' : ''}`}>
-                                      {slave.username}
-                                      {Boolean(slave.has_gold_frame) && <Crown className="w-3 h-3 text-crypto-gold" />}
-                                    </div>
-                                    <div className="text-[10px] text-slate-500 font-bold uppercase">Уровень {slave.level} • {slave.base_income} / мин</div>
-                                  </div>
-                                </div>
-                                <button 
-                                  onClick={() => handleBuy(slave.telegram_id)}
-                                  className="emerald-button text-[10px] py-2 px-4 shrink-0 shadow-lg shadow-crypto-emerald/10"
-                                >
-                                  ВЫКУПИТЬ ({(slave.current_price * 2).toLocaleString()})
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-
-                      <div className="space-y-3">
-                        {myClan?.inClan && viewingProfile.telegram_id.toString() !== user?.telegram_id.toString() && !viewingProfile.clan_id && (
-                          <button 
-                            onClick={() => inviteToClan(viewingProfile.telegram_id)}
-                            className="w-full py-4 rounded-xl border border-crypto-gold/30 text-crypto-gold font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2"
-                          >
-                            <Plus className="w-4 h-4" />
-                            Пригласить в клан
-                          </button>
-                        )}
-
-                        <button 
-                          onClick={() => handleBuy(viewingProfile.telegram_id)}
-                          disabled={viewingProfile.ghost_until && new Date(viewingProfile.ghost_until) > new Date()}
-                          className="gold-button w-full py-4 flex flex-col h-auto"
-                        >
-                          <span className="text-xs">КУПИТЬ ИГРОКА</span>
-                          <span className="text-sm opacity-80">{viewingProfile.current_price.toLocaleString()} МОНЕТ</span>
-                        </button>
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
             </motion.div>
           )}
 
@@ -2060,27 +1967,36 @@ export default function App() {
                             Выйти
                           </button>
                         </div>
-                        <div className="grid grid-cols-2 gap-3 mb-4">
+                        <div className="grid grid-cols-1 gap-3 mb-4">
                           <button 
-                            onClick={copyClanLink}
+                            onClick={shareClanLink}
                             className="glass-card bg-crypto-gold/10 p-3 border-crypto-gold/20 flex items-center justify-center gap-2 group active:scale-[0.98] transition-all"
                           >
-                            <UserPlus className="w-4 h-4 text-crypto-gold" />
-                            <span className="text-[10px] font-black uppercase text-crypto-gold">Пригласить</span>
+                            <Send className="w-4 h-4 text-crypto-gold" />
+                            <span className="text-[10px] font-black uppercase text-crypto-gold">Пригласить в Telegram</span>
                           </button>
+                          <button 
+                            onClick={copyClanLink}
+                            className="glass-card bg-white/5 p-3 border-white/10 flex items-center justify-center gap-2 group active:scale-[0.98] transition-all"
+                          >
+                            <UserPlus className="w-4 h-4 text-slate-400" />
+                            <span className="text-[10px] font-black uppercase text-slate-400">Копировать ссылку</span>
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3 mb-4">
                           <div className="glass-card bg-black/20 p-3 flex flex-col items-center justify-center">
                               <div className="text-[8px] text-slate-500 font-bold uppercase mb-0.5">Участников</div>
                               <div className="text-sm font-black text-white">{myClan.members.length} / 50</div>
                           </div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
-                          <div className="glass-card bg-black/20 p-3">
-                              <div className="text-[8px] text-slate-500 font-bold uppercase mb-1">Общий банк</div>
-                              <div className="text-sm font-black text-crypto-gold">{myClan.members.reduce((acc: number, m: any) => acc + (m.balance || 0), 0).toLocaleString()} 🟡</div>
-                          </div>
                           <div className="glass-card bg-black/20 p-3">
                               <div className="text-[8px] text-slate-500 font-bold uppercase mb-1">Лидер</div>
                               <div className="text-sm font-black text-white truncate">{myClan.members.find((m: any) => m.telegram_id.toString() === myClan.clan.leader_id.toString())?.username || '---'}</div>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-1 gap-3">
+                          <div className="glass-card bg-black/20 p-3">
+                              <div className="text-[8px] text-slate-500 font-bold uppercase mb-1">Общий банк</div>
+                              <div className="text-sm font-black text-crypto-gold text-center">{myClan.members.reduce((acc: number, m: any) => acc + (m.balance || 0), 0).toLocaleString()} 🟡</div>
                           </div>
                         </div>
                       </div>
@@ -2550,7 +2466,7 @@ export default function App() {
                           initial={{ opacity: 0, x: -20 }}
                           animate={{ opacity: 1, x: 0 }}
                           transition={{ delay: idx * 0.05 }}
-                          key={slave.telegram_id} 
+                          key={`${slave.telegram_id}-${idx}`} 
                           className="glass-card bg-black/20 p-5 flex justify-between items-center gap-4 border-white/5 rounded-[24px]"
                         >
                           <div className="flex items-center gap-4 min-w-0 flex-1">
