@@ -426,7 +426,53 @@ $$ LANGUAGE plpgsql;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS photo_url TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS has_gold_frame BOOLEAN DEFAULT FALSE;
 
--- Обновляем лидерборд для возврата радуги, рамки и фото
+CREATE TABLE IF NOT EXISTS clans (
+    id SERIAL PRIMARY KEY,
+    name TEXT UNIQUE NOT NULL,
+    leader_id BIGINT REFERENCES users(telegram_id),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS clan_id INTEGER REFERENCES clans(id);
+
+CREATE TABLE IF NOT EXISTS clan_invites (
+    id SERIAL PRIMARY KEY,
+    clan_id INTEGER REFERENCES clans(id) ON DELETE CASCADE,
+    invitee_id BIGINT REFERENCES users(telegram_id),
+    inviter_id BIGINT REFERENCES users(telegram_id),
+    status TEXT DEFAULT 'pending', -- 'pending', 'accepted', 'declined'
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(clan_id, invitee_id)
+);
+
+-- Функция для получения топа кланов
+CREATE OR REPLACE FUNCTION get_clans_leaderboard()
+RETURNS TABLE (
+    clan_id INTEGER,
+    clan_name TEXT,
+    leader_id BIGINT,
+    leader_username TEXT,
+    total_balance BIGINT,
+    members_count BIGINT
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        c.id as clan_id,
+        c.name as clan_name,
+        c.leader_id,
+        (SELECT u.username FROM users u WHERE u.telegram_id = c.leader_id) as leader_username,
+        SUM(u.balance)::BIGINT as total_balance,
+        COUNT(u.telegram_id)::BIGINT as members_count
+    FROM clans c
+    JOIN users u ON u.clan_id = c.id
+    GROUP BY c.id, c.name, c.leader_id
+    ORDER BY total_balance DESC
+    LIMIT 50;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Обновляем лидерборд для возврата радуги, рамки, фото и клана
 DROP FUNCTION IF EXISTS get_leaderboard();
 CREATE OR REPLACE FUNCTION get_leaderboard()
 RETURNS TABLE (
@@ -436,7 +482,9 @@ RETURNS TABLE (
     slaves_count BIGINT,
     has_rainbow_name BOOLEAN,
     has_gold_frame BOOLEAN,
-    photo_url TEXT
+    photo_url TEXT,
+    clan_id INTEGER,
+    clan_name TEXT
 ) AS $$
 BEGIN
     RETURN QUERY
@@ -447,8 +495,11 @@ BEGIN
         (SELECT COUNT(*) FROM users s WHERE s.owner_id = u.telegram_id) as slaves_count,
         COALESCE(u.has_rainbow_name, false),
         COALESCE(u.has_gold_frame, false),
-        u.photo_url
+        u.photo_url,
+        u.clan_id,
+        c.name as clan_name
     FROM users u
+    LEFT JOIN clans c ON u.clan_id = c.id
     ORDER BY u.balance DESC
     LIMIT 100;
 END;

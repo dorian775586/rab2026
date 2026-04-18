@@ -39,6 +39,9 @@ const SHOP_ITEMS: Record<string, Record<string, { price: number, title: string, 
   extra: {
     rainbow: { price: 777, title: "Радужный ник", desc: "Вечный эффект" },
     gold_frame: { price: 999, title: "Золотая рамка + Корона", desc: "Вечный эффект" }
+  },
+  clans: {
+    create: { price: 100, title: "Создание клана", desc: "Собери свою команду!" }
   }
 };
 
@@ -536,7 +539,7 @@ app.post("/api/shop/buy", validateTelegram, async (req, res) => {
 // Telegram Stars Payment Endpoints
 app.post("/api/create-stars-invoice", validateTelegram, async (req, res) => {
   const tgUser = (req as any).tgUser;
-  const { itemId, itemType } = req.body; 
+  const { itemId, itemType, clanName } = req.body; 
 
   const item = SHOP_ITEMS[itemType]?.[itemId];
   if (!item) {
@@ -544,13 +547,20 @@ app.post("/api/create-stars-invoice", validateTelegram, async (req, res) => {
   }
 
   try {
+    const payloadObj: any = { userId: BigInt(tgUser.id).toString(), itemType, itemId };
+    if (itemType === 'clans' && itemId === 'create') {
+      if (!clanName) return res.status(400).json({ success: false, message: "Введите имя клана" });
+      payloadObj.itemType = 'clan_create';
+      payloadObj.clanName = clanName;
+    }
+
     const response = await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/createInvoiceLink`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         title: item.title,
-        description: item.desc,
-        payload: JSON.stringify({ userId: BigInt(tgUser.id).toString(), itemType, itemId }),
+        description: clanName ? `Клан: ${clanName}` : item.desc,
+        payload: JSON.stringify(payloadObj),
         currency: "XTR",
         prices: [{ label: "Звёзды", amount: item.price }],
         provider_token: "" 
@@ -589,10 +599,23 @@ app.post("/api/webhook/telegram", async (req, res) => {
     if (update.message?.successful_payment) {
       const payment = update.message.successful_payment;
       const payload = JSON.parse(payment.invoice_payload);
-      const { userId, itemType, itemId } = payload;
+      const { userId, itemType, itemId, clanName } = payload;
 
       console.log(`[Payment] User ${userId} bought ${itemType}:${itemId}`);
-      await applyShopReward(userId, itemType, itemId);
+      
+      if (itemType === 'clan_create') {
+        const { data: newClan, error: clanError } = await supabase
+          .from("clans")
+          .insert({ name: clanName, leader_id: userId })
+          .select()
+          .single();
+        
+        if (!clanError && newClan) {
+          await supabase.from("users").update({ clan_id: newClan.id }).eq("telegram_id", userId);
+        }
+      } else {
+        await applyShopReward(userId, itemType, itemId);
+      }
       
       // Notify user via Bot if possible (optional)
     }
@@ -793,7 +816,7 @@ app.get("/api/leaderboard", validateTelegram, async (req, res) => {
     if (error || !data || data.length === 0) {
       const { data: manualData, error: manualError } = await supabase
         .from("users")
-        .select("telegram_id, username, balance, has_rainbow_name, has_gold_frame, photo_url") // ДОБАВИЛИ has_rainbow_name
+        .select("telegram_id, username, balance, has_rainbow_name, has_gold_frame, photo_url, clan_id, clan:clans(name)")
         .order("balance", { ascending: false })
         .limit(100);
       
@@ -810,9 +833,11 @@ app.get("/api/leaderboard", validateTelegram, async (req, res) => {
           username: u.username,
           balance: u.balance,
           slaves_count: count || 0,
-          has_rainbow_name: u.has_rainbow_name, // ТЕПЕРЬ ПЕРЕДАЕТСЯ
+          has_rainbow_name: u.has_rainbow_name,
           has_gold_frame: u.has_gold_frame,
-          photo_url: u.photo_url
+          photo_url: u.photo_url,
+          clan_id: u.clan_id,
+          clan_name: u.clan?.name
         };
       }));
       
@@ -842,6 +867,107 @@ async function startServer() {
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
+
+// Clan Endpoints
+app.get("/api/clans/top", async (req, res) => {
+  try {
+    const { data, error } = await supabase.rpc("get_clans_leaderboard");
+    if (error) throw error;
+    res.json(data);
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+app.get("/api/clans/my", validateTelegram, async (req, res) => {
+  const tgUser = (req as any).tgUser;
+  try {
+    const { data: user } = await supabase.from("users").select("clan_id").eq("telegram_id", tgUser.id).single();
+    if (!user?.clan_id) return res.json({ inClan: false });
+
+    const { data: clan } = await supabase.from("clans").select("*").eq("id", user.clan_id).single();
+    const { data: members } = await supabase.from("users")
+      .select("telegram_id, username, balance, photo_url, has_rainbow_name, has_gold_frame")
+      .eq("clan_id", user.clan_id);
+
+    res.json({ inClan: true, clan, members });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+app.post("/api/clans/invite", validateTelegram, async (req, res) => {
+  const tgUser = (req as any).tgUser;
+  const { targetId } = req.body;
+  try {
+    const { data: inviter } = await supabase.from("users").select("clan_id").eq("telegram_id", tgUser.id).single();
+    if (!inviter?.clan_id) return res.status(400).json({ success: false, message: "Вы не в клане" });
+
+    // Check target current clan
+    const { data: target } = await supabase.from("users").select("clan_id").eq("telegram_id", targetId).single();
+    if (target?.clan_id) return res.status(400).json({ success: false, message: "Игрок уже в клане" });
+
+    const { error } = await supabase.from("clan_invites").insert({
+      clan_id: inviter.clan_id,
+      invitee_id: targetId,
+      inviter_id: tgUser.id
+    });
+
+    if (error) {
+      if (error.code === '23505') return res.status(400).json({ success: false, message: "Приглашение уже отправлено" });
+      throw error;
+    }
+
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+app.get("/api/clans/invites", validateTelegram, async (req, res) => {
+  const tgUser = (req as any).tgUser;
+  try {
+    const { data, error } = await supabase
+      .from("clan_invites")
+      .select("*, clan:clans(name)")
+      .eq("invitee_id", tgUser.id)
+      .eq("status", "pending");
+    if (error) throw error;
+    res.json(data);
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+app.post("/api/clans/invites/respond", validateTelegram, async (req, res) => {
+  const tgUser = (req as any).tgUser;
+  const { inviteId, action } = req.body; // action: 'accept' or 'decline'
+  try {
+    const { data: invite } = await supabase.from("clan_invites").select("*").eq("id", inviteId).single();
+    if (!invite) return res.status(404).json({ success: false, message: "Приглашение не найдено" });
+
+    if (action === 'accept') {
+      await supabase.from("users").update({ clan_id: invite.clan_id }).eq("telegram_id", tgUser.id);
+      await supabase.from("clan_invites").delete().eq("invitee_id", tgUser.id); // Clear all invites
+    } else {
+      await supabase.from("clan_invites").delete().eq("id", inviteId);
+    }
+
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+app.post("/api/clans/leave", validateTelegram, async (req, res) => {
+  const tgUser = (req as any).tgUser;
+  try {
+    await supabase.from("users").update({ clan_id: null }).eq("telegram_id", tgUser.id);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
