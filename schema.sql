@@ -315,11 +315,11 @@ BEGIN
     IF is_free THEN
         actual_bet := 100;
     ELSE
-        actual_bet := bet_param;
+        actual_bet := GREATEST(bet_param, 10); -- Минимум 10
     END IF;
 
     -- 2. Берем текущий джекпот
-    SELECT COALESCE(value_int, 0) INTO jackpot_current FROM globals WHERE key = 'jackpot_fund';
+    SELECT COALESCE(value_int, 1000) INTO jackpot_current FROM globals WHERE key = 'jackpot_fund';
     
     -- 3. Проверяем баланс и кулдаун
     SELECT balance, username INTO u_balance, u_username FROM users WHERE telegram_id = user_id_param;
@@ -334,54 +334,61 @@ BEGIN
         END IF;
     END IF;
 
-    -- 4. Логика шансов и сегментов
+    -- 4. Логика шансов (0-99)
     rand_val := floor(random() * 100);
     
-    IF rand_val < 1 THEN -- 1% Jackpot
+    IF rand_val < 1 THEN -- 1% Jackpot (rand_val = 0)
         segment_idx := 0;
-        multiplier := 0; 
+        multiplier := 500; -- Для отображения высокого множителя
         win_amt := jackpot_current;
         res_type := 'jackpot';
         UPDATE globals SET value_int = 1000 WHERE key = 'jackpot_fund';
-    ELSIF rand_val < 5 THEN -- 4% x20
+        
+    ELSIF rand_val < 5 THEN -- 4% x20 (rand_val 1,2,3,4)
         segment_idx := 7;
         multiplier := 20;
         win_amt := actual_bet * 20;
         res_type := 'win';
-    ELSIF rand_val < 10 THEN -- 5% x10
+        
+    ELSIF rand_val < 10 THEN -- 5% x10 (rand_val 5,6,7,8,9)
         segment_idx := 5;
         multiplier := 10;
         win_amt := actual_bet * 10;
         res_type := 'win';
+        
     ELSIF rand_val < 18 THEN -- 8% x2 (Segment 6)
         segment_idx := 6;
         multiplier := 2;
         win_amt := actual_bet * 2;
         res_type := 'win';
-    ELSIF rand_val < 26 THEN -- 8% x2 (Segment 3) -> Total x2 is 16%
+        
+    ELSIF rand_val < 26 THEN -- 8% x2 (Segment 3)
         segment_idx := 3;
         multiplier := 2;
         win_amt := actual_bet * 2;
         res_type := 'win';
-    ELSIF rand_val < 51 THEN -- 25% x0.5
+        
+    ELSIF rand_val < 51 THEN -- 25% x0.5 (Segment 2)
         segment_idx := 2;
         multiplier := 0.5;
         win_amt := floor(actual_bet * 0.5);
         res_type := 'win';
+        
     ELSE -- 49% ПУСТО (Segments 1, 4)
-        rand_val := floor(random() * 2);
-        IF rand_val = 0 THEN segment_idx := 1;
-        ELSE segment_idx := 4;
-        END IF;
         multiplier := 0;
         win_amt := 0;
         res_type := 'loss';
+        -- Случайный выбор одного из двух пустых сегментов
+        IF floor(random() * 2) = 0 THEN 
+            segment_idx := 1;
+        ELSE 
+            segment_idx := 4;
+        END IF;
     END IF;
 
-    -- Начисление в джекпот: разница между ставкой и выигрышем (если выигрыш меньше ставки)
-    -- Это покрывает и проигрыш (win_amt = 0), и x0.5 (win_amt = 0.5 * bet)
+    -- Пополнение джекпота (только при платной игре и проигрыше/сливе части ставки)
     IF NOT is_free AND res_type != 'jackpot' AND win_amt < actual_bet THEN
-        UPDATE globals SET value_int = value_int + (actual_bet - win_amt), value = NULL WHERE key = 'jackpot_fund';
+        UPDATE globals SET value_int = value_int + (actual_bet - win_amt) WHERE key = 'jackpot_fund';
     END IF;
 
     -- 5. Обновляем пользователя
