@@ -2063,7 +2063,7 @@ export default function App() {
                           onClick={() => setIsClanModalOpen(true)}
                           className="gold-button w-full py-3.5 text-xs font-black uppercase tracking-widest shadow-[0_10px_20px_rgba(251,191,36,0.1)] active:scale-[0.98]"
                         >
-                          СОЗДАТЬ КЛАН ЗА 100 🟡
+                          СОЗДАТЬ КЛАН ЗА 10.000 🟡
                         </button>
                       </div>
                     )}
@@ -2130,7 +2130,7 @@ export default function App() {
                   </div>
 
                   <p className="text-xs text-slate-400 font-medium mb-6 leading-relaxed">
-                    Создание клана стоит <span className="text-crypto-gold font-bold">100 🟡</span>. 
+                    Создание клана стоит <span className="text-crypto-gold font-bold">10.000 🟡</span>. 
                     После создания вы станете лидером и сможете приглашать других игроков.
                   </p>
 
@@ -2152,7 +2152,7 @@ export default function App() {
                       disabled={newClanName.length < 3 || actionLoading !== null}
                       className="gold-button w-full py-4 text-sm font-black shadow-[0_15px_30px_rgba(251,191,36,0.15)] flex items-center justify-center gap-2"
                     >
-                      {actionLoading === 'create-clan' ? <Loader2 className="w-5 h-5 animate-spin" /> : <>СОЗДАТЬ ЗА 100 🟡</>}
+                      {actionLoading === 'create-clan' ? <Loader2 className="w-5 h-5 animate-spin" /> : <>СОЗДАТЬ ЗА 10.000 🟡</>}
                     </button>
                   </div>
                 </motion.div>

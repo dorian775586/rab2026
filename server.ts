@@ -44,9 +44,6 @@ const SHOP_ITEMS: Record<string, Record<string, { price: number, title: string, 
   extra: {
     rainbow: { price: 777, title: "Радужный ник", desc: "Вечный эффект" },
     gold_frame: { price: 999, title: "Золотая рамка + Корона", desc: "Вечный эффект" }
-  },
-  clans: {
-    create: { price: 100, title: "Создание клана", desc: "Собери свою команду за 100 монет!" }
   }
 };
 
@@ -601,11 +598,6 @@ app.post("/api/create-stars-invoice", validateTelegram, async (req, res) => {
 
   try {
     const payloadObj: any = { userId: BigInt(tgUser.id).toString(), itemType, itemId };
-    if (itemType === 'clans' && itemId === 'create') {
-      if (!clanName) return res.status(400).json({ success: false, message: "Введите имя клана" });
-      payloadObj.itemType = 'clan_create';
-      payloadObj.clanName = clanName;
-    }
 
     const response = await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/createInvoiceLink`, {
       method: "POST",
@@ -656,25 +648,7 @@ app.post("/api/webhook/telegram", async (req, res) => {
 
       console.log(`[Payment] User ${userId} bought ${itemType}:${itemId}`);
       
-      if (itemType === 'clan_create') {
-        console.log(`[Payment] Creating clan "${clanName}" for user ${userId}`);
-        const { data: newClan, error: clanError } = await supabase
-          .from("clans")
-          .insert({ name: clanName, leader_id: userId })
-          .select()
-          .single();
-        
-        if (clanError) {
-          console.error("[Clan Create Webhook Error]:", clanError);
-        }
-
-        if (!clanError && newClan) {
-          const { error: userUpdateError } = await supabase.from("users").update({ clan_id: newClan.id }).eq("telegram_id", userId);
-          if (userUpdateError) console.error("[Update User Clan Error]:", userUpdateError);
-        }
-      } else {
-        await applyShopReward(userId, itemType, itemId);
-      }
+      await applyShopReward(userId, itemType, itemId);
       
       // Notify user via Bot if possible (optional)
     }
@@ -1032,7 +1006,7 @@ app.post("/api/clans/create-coin", validateTelegram, async (req, res) => {
 
     if (userError || !user) throw new Error("Пользователь не найден");
     if (user.clan_id) return res.status(400).json({ success: false, message: "Вы уже в клане" });
-    if (user.balance < 100) return res.status(400).json({ success: false, message: "Недостаточно монет" });
+    if (user.balance < 10000) return res.status(400).json({ success: false, message: "Недостаточно монет (нужно 10,000)" });
 
     // 2. Check if clan name exists
     const { data: existingClan } = await supabase
@@ -1056,10 +1030,10 @@ app.post("/api/clans/create-coin", validateTelegram, async (req, res) => {
     const { error: updateError } = await supabase
       .from("users")
       .update({ 
-        balance: user.balance - 100,
+        balance: user.balance - 10000,
         clan_id: newClan.id 
       })
-      .eq("telegram_id", BigInt(tgUser.id).toString());
+    .eq("telegram_id", BigInt(tgUser.id).toString());
 
     if (updateError) throw updateError;
 
